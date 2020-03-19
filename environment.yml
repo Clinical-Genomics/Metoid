@@ -1,0 +1,9 @@
+name: sofia
+channels:
+  - bioconda
+  - anaconda
+dependencies:
+  - samtools
+  - pigz
+  - fastqc
+
