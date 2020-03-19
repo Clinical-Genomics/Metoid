@@ -1,14 +1,6 @@
-FROM ubuntu
+FROM continuumio/miniconda3:4.8.2
 
-MAINTAINER Sofia Stamouli <sofia.stamouli@folkhalsomyndigheten.se>
-
-
-RUN apt-get update --fix-missing && \
-  apt-get install -q -y python wget unzip samtools
-
-
-RUN apt-get update && apt-get install -y pigz
-
-RUN apt-get update && apt-get install -y software-properties-common
-
-
+COPY environment.yml /
+RUN conda env create -f /environment.yml
+RUN echo "source activate sofia" > ~/.bashrc
+ENV PATH /opt/conda/envs/sofia/bin:$PATH
