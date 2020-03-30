@@ -4,7 +4,6 @@ params.singleEnd = false
 params.pairedEnd = false
 params.bam = false
 params.reads = "data/*{1,2}.fastq.gz"
-params.readPaths = false
 params.outdir="$baseDir/results"
 
 
@@ -29,7 +28,7 @@ if (!params.bam){
         .map { row -> [file( row )]}
         .ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" }
         .view() 
-	.into{ch_input_bamtofastq} 
+	.set{ch_input_bamtofastq} 
          
 
 }
@@ -108,18 +107,19 @@ process fastp {
 	
 	output:
 	set val(name), file("${name}_*trimmed.fastq.gz") into trimmed_reads	
+	file("${name}.html")
 	file ("${name}_fastp.json")
 
 	script:
 	if(params.singleEnd || params.bam){
     	
 	"""
-	fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json"
+	fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" 
         """
     }	
 	else {
     	"""
-	fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json"
+	fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" 
         
     	"""
     }
