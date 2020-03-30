@@ -36,7 +36,7 @@ if (!params.bam){
 
 
 /*
- * PREPROCESSING - Convert BAM to FastQ if BAM as input
+ * PREPROCESSING - Change name and convert bam to fastq
  *
  */
 
