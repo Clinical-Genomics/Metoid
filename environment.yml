@@ -6,4 +6,5 @@ dependencies:
   - samtools
   - pigz
   - fastqc
-
+  - fastp
+  - multiqc
