@@ -51,17 +51,16 @@ process BamToFastq {
         input:
         file bam from ch_input_bamtofastq
 
-        output:
-        set val("${base}"), file ("*.fastq.gz") into ch_output_bamtofastq
+	output:
+	set val("${base}"), file ("*.fastq.gz") into ch_output_bamtofastq
 
         script:
         base = "${bam.baseName}"
         """
+	#samtools view -h ${bam} | grep -P '\tSM:' | head -n 1 | sed 's/.\\+SM:\\(.\\+\\)/\\1/' | sed 's/\t.\\+//' | sed 's/\\s/_/g'	
         samtools fastq -tn ${bam} | pigz -p ${task.cpus} > ${base}.fastq.gz
         """
 }
-
-
 
 
 if (params.bam) {
@@ -76,7 +75,6 @@ if (params.bam) {
  * Adaptor trimming- fastp
  * Do we need fastqc control on trimmed data
  */
-
 
 
 process fastqc {
@@ -125,9 +123,23 @@ process fastp {
     }
 
 	
-
-
 }
 
+process multiqc {
+
+	publishDir "${params.outdir}/multiqc", mode: 'copy'
+
+	input:
+	file ('fastqc/*') from fastqc_results.collect()
+
+	output:
+	file('multiqc_report.html')
+
+	script:
+	"""
+	multiqc .
+	"""
+
+}
 
 
