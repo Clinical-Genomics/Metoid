@@ -57,8 +57,10 @@ process BamToFastq {
 	script:
 	base = "${bam.baseName}"
 	"""
-	#samtools view -h ${bam} | grep -P '\tSM:' | head -n 1 | sed 's/.\\+SM:\\(.\\+\\)/\\1/' | sed 's/\t.\\+//' | sed 's/\\s/_/g'	
+	new_bam="\$(samtools view -h ${bam} | grep -P '\tSM:' | head -n 1 | sed 's/.\\+SM:\\(.\\+\\)/\\1/' | sed 's/\t.\\+//' | sed 's/\\s/_/g')"	
+	echo "\${new_bam}" 
 	samtools fastq -tn ${bam} | pigz -p ${task.cpus} > ${base}.fastq.gz
+	mv ${base}.fastq.gz "\${new_bam}".fastq.gz
 	"""
 }
 
