@@ -5,6 +5,10 @@ params.pairedEnd = false
 params.bam = false
 params.reads = "data/*{1,2}.fastq.gz"
 params.outdir="$baseDir/results"
+/*params.GRCh38="ftp://ftp.ncbi.nlm.nih.gov/refseq/H_sapiens/annotation/GRCh38_latest/refseq_identifiers/GRCh38_latest_genomic.fna.gz"*/
+/*params.GRCh38="ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/assembly_summary.txt"*/
+params.krakendb="$baseDir/results/databases/HumanViral"
+params.kraken2_build = false
 
 
 /* 
@@ -39,37 +43,60 @@ if (!params.bam){
  *
  */
 
+process renameBam {
+
+        tag "$bam"
+        publishDir "${params.outdir}/renameBam", mode: 'copy'
+
+        when: params.bam
+
+        input:
+        file bam from ch_input_bamtofastq
+      
+ 	output:
+	file ("*.bam") into ch_renamebam
+		
+ 
+	
+        script:
+
+        new_bam="\$(samtools view -h ${bam} | grep -P '\tSM:' | head -n 1 | sed 's/.\\+SM:\\(.\\+\\)/\\1/' | sed 's/\t.\\+//' | sed 's/\\s/_/g')"
+                       
+        """
+        cp ${bam} "$new_bam".bam
+        """
+
+}
+
 
 process BamToFastq {
-
+	
 	tag "$bam"
-	publishDir "$params.outdir/BamToFastq", mode: 'copy'
+	publishDir "${params.outdir}/BamToFastq", mode: 'copy'
 
 
 	when: params.bam 
 
 	input:
-	file bam from ch_input_bamtofastq
+        file bam from ch_renamebam
 
 	output:
-	set val("${base}"), file ("*.fastq.gz") into ch_output_bamtofastq
+	set val("${base}"), file("*.fastq.gz") into ch_output_bamtofastq
 
 	script:
-	base = "${bam.baseName}"
+        base = "${bam.baseName}"
 	"""
-	new_bam="\$(samtools view -h ${bam} | grep -P '\tSM:' | head -n 1 | sed 's/.\\+SM:\\(.\\+\\)/\\1/' | sed 's/\t.\\+//' | sed 's/\\s/_/g')"	
-	echo "\${new_bam}" 
-	samtools fastq -tn ${bam} | pigz -p ${task.cpus} > ${base}.fastq.gz
-	mv ${base}.fastq.gz "\${new_bam}".fastq.gz
+	samtools fastq -tn ${bam} | gzip > ${base}.fastq.gz 
 	"""
-}
+} 
 
 
 if (params.bam) {
 	ch_output_bamtofastq
-	.into {ch_input_fastqc; ch_input_fastp}
+        .view()
+	.into {ch_input_fastqc; ch_input_fastp} 
 
-}
+} 
 
 
 /*
@@ -80,7 +107,7 @@ if (params.bam) {
 
 
 process fastqc {
-
+	
 	tag "$name"
 	publishDir  "${params.outdir}/FastQC", mode: 'copy'
 
@@ -93,7 +120,7 @@ process fastqc {
 
 	script:
 	"""
-	fastqc -t "${task.cpus}" -q $reads
+	fastqc -t "${task.cpus}" -q $reads --extract
 	"""
 }
 
@@ -106,9 +133,9 @@ process fastp {
 	set val(name), file(reads) from ch_input_fastp
 
 	output:
-	set val(name), file("${name}_*trimmed.fastq.gz") into trimmed_reads	
-	file("${name}.html")
-	file ("${name}_fastp.json")
+	set val(name), file("*_trimmed.fastq.gz") into trimmed_reads	
+	file("*.html")
+	file ("*_fastp.json")
 
 	script:
 	if(params.singleEnd || params.bam){
@@ -129,18 +156,70 @@ process fastp {
 
 process multiqc {
 
+	
+	tag "$name"
 	publishDir "${params.outdir}/multiqc", mode: 'copy'
 
 	input:
-	file ('fastqc/*') from fastqc_results.collect()
+	set val(name), file ('fastqc/*') from fastqc_results.collect()
 
 	output:
-	file('multiqc_report.html')
+	file('*_multiqc_report.html')
 
 	script:
 	"""
 	multiqc .
 	"""
+} 
+
+process krakenBuild {
+
+	publishDir "${params.outdir}/databases", mode: 'copy'
+
+	when: params.kraken2_build
+
+
+	script:
+
+	"""
+        mkdir -p ${params.outdir}/databases
+	UpdateKrakenDatabases.py ${params.outdir}/databases
+
+			
+	"""
+	
+
+} 
+
+
+process kraken2 {
+	
+	publishDir "${params.outdir}/kraken2", mode: 'copy'
+
+
+	input:
+        set val(name), file(reads) from trimmed_reads
+
+
+	output:
+        set val(name), file('*.kraken.out') into kraken_out
+        set val(name), file('*.kraken.report') into kraken_report
+	set val(name), file("results.krona") into ch_krona 
+
+
+	script:
+        out = name+".kraken.out"
+        kreport = name+".kraken.report"
+        if (params.pairedEnd){
+            """
+            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]} 
+            """    
+        } else {
+            """
+            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport ${reads[0]}
+            """
+        }
+
+
+
 }
-
-
