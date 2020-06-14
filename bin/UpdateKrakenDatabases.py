@@ -148,7 +148,7 @@ download_refseq_genome(9606,'human_genome_url.txt')
 
 
 #print('Downloading bacterial genomes'+'\n')
-#download_bacterial_genomes('bacterial_complete_genome_url.txt')
+download_bacterial_genomes('bacterial_complete_genome_url.txt')
 
 download_viral_genomes('viral_complete_genome_url.txt')
 
@@ -160,18 +160,18 @@ download_viral_genomes('viral_complete_genome_url.txt')
 #get_fasta_in_kraken_format('archaeal_genomes.fa')
 
 #Set name for the krakendb directory
-krakendb='HumanViral'
+krakendb='HumanViralBacteria'
 #kraken_dir="/srv/rs6/sofia/Metoid/Metoid/results/databases"
 #human_db="Human"
 #human_path=os.path.join(kraken_dir, human_db)
 #os.mkdir(human_path)
-subprocess.call('kraken2-build --download-taxonomy --use-ftp --db '+krakendb, shell=True)
+subprocess.call('kraken2-build --download-taxonomy --use-ftp --db '+krakendb+' --threads 4', shell=True)
 print('Running Kraken DB build for '+krakendb+'\n')
 print('This might take a while '+'\n')
 for fna_file in os.listdir(cwd):
     print ('fna ' + fna_file)
     if fna_file.endswith('.fna'):
         print (fna_file)
-        subprocess.call('kraken2-build --add-to-library '+fna_file +' --db '+krakendb,shell=True)
+        subprocess.call('kraken2-build --add-to-library '+fna_file +' --db '+krakendb+ ' --threads 4',shell=True)
 subprocess.call('kraken2-build --build --db '+krakendb+' --threads 4',shell=True)
 
