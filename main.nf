@@ -66,7 +66,7 @@ process renameBam {
         cp ${bam} "$new_bam".bam
         """
 
-}
+} 
 
 
 process BamToFastq {
@@ -161,10 +161,10 @@ process multiqc {
 	publishDir "${params.outdir}/multiqc", mode: 'copy'
 
 	input:
-	set val(name), file ('fastqc/*') from fastqc_results.collect()
+	file (fastqc:'fastqc/*') from fastqc_results.collect().ifEmpty([])
 
 	output:
-	file('*_multiqc_report.html')
+	file "*multiqc_report.html" into multiqc_report		
 
 	script:
 	"""
@@ -202,9 +202,8 @@ process kraken2 {
 
 
 	output:
-        set val(name), file('*.kraken.out') into kraken_out
-        set val(name), file('*.kraken.report') into kraken_report
-	set val(name), file("results.krona") into ch_krona 
+        set val(name), file("*.kraken.out") into kraken_out
+        set val(name), file("*.kraken.report") into kraken_report 
 
 
 	script:
@@ -212,11 +211,12 @@ process kraken2 {
         kreport = name+".kraken.report"
         if (params.pairedEnd){
             """
-            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]} 
+            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
             """    
         } else {
             """
             kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport ${reads[0]}
+
             """
         }
 
