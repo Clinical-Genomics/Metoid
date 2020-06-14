@@ -1,10 +1,17 @@
-name: sofia
+name: metoid_ks
 channels:
   - bioconda
   - anaconda
+  - defaults
+  - conda-forge
 dependencies:
-  - samtools
+  - samtools=1.9
   - pigz
   - fastqc
   - fastp
   - multiqc
+  - pandas
+  - biopython
+  - kraken2
+  - krona
+  
