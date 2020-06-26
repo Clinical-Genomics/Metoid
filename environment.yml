@@ -14,4 +14,7 @@ dependencies:
   - biopython
   - kraken2
   - krona
+  - bowtie2
+  - bedtools
+  - kaiju=1.6.3
   
