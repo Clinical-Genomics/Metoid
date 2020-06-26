@@ -5,11 +5,11 @@ params.pairedEnd = false
 params.bam = false
 params.reads = "data/*{1,2}.fastq.gz"
 params.outdir="$baseDir/results"
-/*params.GRCh38="ftp://ftp.ncbi.nlm.nih.gov/refseq/H_sapiens/annotation/GRCh38_latest/refseq_identifiers/GRCh38_latest_genomic.fna.gz"*/
-/*params.GRCh38="ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/vertebrate_mammalian/assembly_summary.txt"*/
 params.krakendb="$baseDir/results/databases/HumanViral"
-params.kraken2_build = false
-
+params.kaiju_db="$baseDir/results/databases/virus_kaiju"
+params.db_build = false
+params.GRCh38="/srv/rs6/sofia/Metoid/Metoid/results/databases/GCF_000001405.39_GRCh38.p13_genomic.fna"
+human_ref=file(params.GRCh38)
 
 /* 
  * Check if we get 4 files for paired-end reads
@@ -22,7 +22,6 @@ if (!params.bam){
 	.fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
 	.filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
 	.ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'\nIf this is single-end data, please specify --singleEnd on the command line." }
-	.view() 
 	.into{ch_input_bamtofastq;ch_input_fastqc;ch_input_fastp} 
 
 } else {
@@ -30,8 +29,7 @@ if (!params.bam){
 	.fromPath( params.reads )
 	.filter { it =~/.*.bam/ }
 	.map { row -> [file( row )]}
-	.ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" }
-	.view() 
+	.ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" } 
 	.set{ch_input_bamtofastq} 
 
 
@@ -133,7 +131,7 @@ process fastp {
 	set val(name), file(reads) from ch_input_fastp
 
 	output:
-	set val(name), file("*_trimmed.fastq.gz") into trimmed_reads	
+	set val(name), file("*_trimmed.fastq.gz") into (trimmed_reads_bowtie2, trimmed_reads_fastqc)	
 	file("*.html")
 	file ("*_fastp.json")
 
@@ -154,7 +152,28 @@ process fastp {
 
 }
 
-process multiqc {
+process fastqc_after_trimming {
+
+	tag "$name"
+        publishDir  "${params.outdir}/FastQC", mode: 'copy'
+
+        input:
+        set val(name), file(reads) from trimmed_reads_fastqc
+
+        output:
+        file "*_fastqc.{zip,html}" into fastqc_after_trimming
+
+
+        script:
+        """
+        fastqc -t "${task.cpus}" -q $reads --extract
+        """
+
+
+}
+
+
+/*process multiqc {
 
 	
 	tag "$name"
@@ -170,13 +189,75 @@ process multiqc {
 	"""
 	multiqc .
 	"""
+}*/
+
+
+process index_host {
+
+	when: params.db_build
+
+
+	input:
+	file host_genome from human_ref
+
+	output:
+	file 'index*' into ch_index_host
+
+	script:
+        """
+	bowtie2-build $host_genome index
+        """
 } 
+
+
+process bowtie2 {
+	
+	tag "$name"
+	publishDir "${params.outdir}/bowtie2", mode: 'copy'
+
+	input:
+	set val(name), file(reads) from trimmed_reads_bowtie2
+	file(index) from ch_index_host.collect()
+
+	output:
+        set val(name), file("*_removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju)
+	
+	script:
+	samfile = name+".sam"
+	bamfile = name+"_mapped_and_unmapped.bam"	
+	unmapped_bam = name+ "_only_unmapped.bam"
+	mapped_bam = name+"_mapped.bam"
+	bam_sorted = name+"_sorted.bam"
+	bam_mapped_sorted = name+"_mapped_sorted.bam"
+
+	index_name = index.toString().tokenize(' ')[0].tokenize('.')[0]	
+	
+	if (params.pairedEnd){
+        """
+        bowtie2 -x $index_name --local -1 ${reads[0]} -2 ${reads[1]} > $samfile
+	samtools view -Sb $samfile > $bamfile
+	samtools view -b -f4 $bamfile > $unmapped_bam
+	samtools sort -n $unmapped_bam -o $bam_sorted
+	bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
+        """
+        }else {
+        """
+        bowtie2 -x $index_name --local -U $reads > $samfile
+	samtools view -Sb $samfile > $bamfile
+        samtools view -b -f4 $bamfile > $unmapped_bam
+        samtools sort -n $unmapped_bam -o $bam_sorted
+	bedtools bamtofastq -i $bam_sorted -fq "${name}_removed.fastq"
+        """
+        }
+
+}
+
 
 process krakenBuild {
 
 	publishDir "${params.outdir}/databases", mode: 'copy'
 
-	when: params.kraken2_build
+	when: params.db_build
 
 
 	script:
@@ -184,30 +265,30 @@ process krakenBuild {
 	"""
         mkdir -p ${params.outdir}/databases
 	UpdateKrakenDatabases.py ${params.outdir}/databases
-
-			
+		
 	"""
 	
-
 } 
 
 
 process kraken2 {
 	
+	tag "$name"
+	
 	publishDir "${params.outdir}/kraken2", mode: 'copy'
 
 
 	input:
-        set val(name), file(reads) from trimmed_reads
+        set val(name), file(reads) from ch_bowtie2_kraken
 
 
 	output:
-        set val(name), file("*.kraken.out") into kraken_out
+        set val(name), file("*.kraken.out.txt") into kraken_out
         set val(name), file("*.kraken.report") into kraken_report 
 
 
 	script:
-        out = name+".kraken.out"
+        out = name+".kraken.out.txt"
         kreport = name+".kraken.report"
         if (params.pairedEnd){
             """
@@ -215,11 +296,100 @@ process kraken2 {
             """    
         } else {
             """
-            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport ${reads[0]}
+            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport ${reads[0]} 
 
             """
         }
 
+} 
 
+process krona_taxonomy {
+    
+
+    output:
+    file("taxonomy/taxonomy.tab") into file_krona_taxonomy
+
+
+    script:
+    """
+    ktUpdateTaxonomy.sh taxonomy
+    """
+}
+
+
+
+
+process krona_kraken {
+
+    tag "$name"
+
+    publishDir "${params.outdir}/krona_kraken", mode: 'copy'
+
+
+    input:
+    set val(name), file(report) from kraken_out
+    file("taxonomy/taxonomy.tab") from file_krona_taxonomy
+
+    output:
+    file("*")
+
+    script:
+
+    """
+    ktImportTaxonomy -o ${name}.krona.html -t 3 -s 4 ${name}.kraken.out.txt -tax taxonomy
+    """
+}
+
+process kaiju {
+
+    tag "$name"
+   
+    publishDir "${params.outdir}/kaiju", mode: 'copy'
+
+    input:
+    set val(name), file(reads) from ch_bowtie2_kaiju
+
+    output:
+    set val(name), file("*.kaiju.out") into kaiju_out
+    set val(name), file("*.kaiju.out.krona") into ch_kaiju_krona
+
+    script:
+    out = name+".kaiju.out"	
+    krona_kaiju = name + ".kaiju.out.krona"
+
+    if (params.pairedEnd){
+    """
+    kaiju -x -v -t ${params.kaiju_db}/nodes.dmp -f ${params.kaiju_db}/kaiju_db_viruses.fmi -i ${reads[0]} -j ${reads[1]} -o $out
+    kaiju2krona -t ${params.kaiju_db}/nodes.dmp -n ${params.kaiju_db}/names.dmp -i $out -o $krona_kaiju    
+    """
+    } else {
+    """
+    kaiju -x -v -t ${params.kaiju_db}/nodes.dmp -f ${params.kaiju_db}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
+    kaiju2krona -t ${params.kaiju_db}/nodes.dmp -n ${params.kaiju_db}/names.dmp -i $out -o $krona_kaiju
+            
+    """
+    }
 
 }
+process krona_kaiju {
+
+    tag "$name"
+
+    publishDir "${params.outdir}/krona_kaiju", mode: 'copy'
+
+
+    input:
+    set val(name), file(report) from ch_kaiju_krona
+    file("taxonomy/taxonomy.tab") from file_krona_taxonomy
+
+    output:
+    file("*")
+
+    script:
+
+    """
+    ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
+    """
+}
+
+
