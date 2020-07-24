@@ -1,0 +1,15 @@
+Escherichia phage T7
+Escherichia virus T4
+Escherichia phage vB_EcoM_JS09
+Escherichia phage Av-05
+Salmonella phage SPN3UB
+Salmonella phage SPN3US
+Microbacterium phage Min1
+Streptococcus phage SM1
+Streptococcus prophage EJ-1
+Streptococcus phage PH10
+Acinetobacter phage Acj61
+Acinetobacter phage ZZ1
+Streptococcus phage YMC-2011
+Acinetobacter phage vB_AbaM_Acibel004
+Streptococcus phage SpSL1
