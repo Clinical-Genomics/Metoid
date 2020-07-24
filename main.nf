@@ -10,6 +10,9 @@ params.kaiju_db="$baseDir/results/databases/virus_kaiju"
 params.db_build = false
 params.GRCh38="/srv/rs6/sofia/Metoid/Metoid/results/databases/GCF_000001405.39_GRCh38.p13_genomic.fna"
 human_ref=file(params.GRCh38)
+params.accession_list="$baseDir/bin/accession_list.txt"
+params.contaminants="/srv/rs6/sofia/Metoid/Metoid/results/Contaminants/contaminants.fna"
+contaminants_file=file(params.contaminants)
 
 /* 
  * Check if we get 4 files for paired-end reads
@@ -192,6 +195,38 @@ process fastqc_after_trimming {
 }*/
 
 
+process retrieve_contaminants {
+
+	publishDir "${params.outdir}/Contaminants", mode: 'copy'
+
+	when: params.db_build
+
+        script:
+
+        """
+        mkdir -p ${params.outdir}/Contaminants
+        RetrieveContaminants.py ${params.outdir}/Contaminants ${params.accession_list} 
+	"""
+
+}
+
+
+process index_contaminants {
+
+	input:
+	file cont_genomes from contaminants_file
+
+	output:
+	file 'index*' into ch_index_contaminants
+
+	script:
+	"""
+	bowtie2-build $cont_genomes index
+	"""
+
+}
+
+
 process index_host {
 
 	when: params.db_build
@@ -209,6 +244,10 @@ process index_host {
         """
 } 
 
+ch_index_host
+	.mix (ch_index_contaminants)
+	.set {bowtie2_input}
+
 
 process bowtie2 {
 	
@@ -217,7 +256,7 @@ process bowtie2 {
 
 	input:
 	set val(name), file(reads) from trimmed_reads_bowtie2
-	file(index) from ch_index_host.collect()
+	file(index) from bowtie2_input.collect()
 
 	output:
         set val(name), file("*_removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju)
@@ -264,7 +303,7 @@ process krakenBuild {
 
 	"""
         mkdir -p ${params.outdir}/databases
-	UpdateKrakenDatabases.py ${params.outdir}/databases
+	UpdateKrakenDatabases.py ${params.outdir}/databases 
 		
 	"""
 	
@@ -371,6 +410,7 @@ process kaiju {
     }
 
 }
+
 process krona_kaiju {
 
     tag "$name"
