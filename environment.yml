@@ -17,4 +17,5 @@ dependencies:
   - bowtie2
   - bedtools
   - kaiju=1.6.3
+  - centrifuge
   
