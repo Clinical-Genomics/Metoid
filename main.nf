@@ -230,6 +230,10 @@ process multiqc {
 	"""
 }
 
+/*
+ * BUILD DATABASES
+ *
+ */
 
 process retrieve_contaminants {
 
@@ -246,7 +250,6 @@ process retrieve_contaminants {
 
 }
 
-
 process index_contaminants {
 
 	input:
@@ -259,9 +262,7 @@ process index_contaminants {
 	"""
 	bowtie2-build $cont_genomes index
 	"""
-
 }
-
 
 process index_host {
 
@@ -284,6 +285,26 @@ ch_index_host
 	.mix (ch_index_contaminants)
 	.set {bowtie2_input}
 
+process krakenBuild {
+
+        publishDir "${params.outdir}/databases", mode: 'copy'
+
+        when: params.db_build
+
+
+        script:
+
+        """
+        mkdir -p ${params.outdir}/databases
+        UpdateKrakenDatabases.py ${params.outdir}/databases
+
+        """
+}
+
+/*
+ * FILTER READS
+ *
+ */
 
 process bowtie2 {
 	
@@ -327,24 +348,10 @@ process bowtie2 {
 
 }
 
-
-process krakenBuild {
-
-	publishDir "${params.outdir}/databases", mode: 'copy'
-
-	when: params.db_build
-
-
-	script:
-
-	"""
-        mkdir -p ${params.outdir}/databases
-	UpdateKrakenDatabases.py ${params.outdir}/databases 
-		
-	"""
-	
-} 
-
+/*
+ * TAXONOMIC CLASSIFICATION
+ *
+ */
 
 process kraken2 {
 	
