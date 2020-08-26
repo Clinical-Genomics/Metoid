@@ -3,6 +3,7 @@
 params.singleEnd = false
 params.pairedEnd = false
 params.bam = false
+params.longreads = false
 params.reads = "data/*{1,2}.fastq.gz"
 params.outdir="$baseDir/results"
 params.krakendb="$baseDir/results/databases/HumanViral"
@@ -15,27 +16,32 @@ params.contaminants="/srv/rs6/sofia/Metoid/Metoid/results/Contaminants/contamina
 contaminants_file=file(params.contaminants)
 
 /* 
- * Check if we get 4 files for paired-end reads
+ * Get input data
  *
  */
 
 
-if (!params.bam){
-	Channel
-	.fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
-	.filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
-	.ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'\nIf this is single-end data, please specify --singleEnd on the command line." }
-	.into{ch_input_bamtofastq;ch_input_fastqc;ch_input_fastp} 
-
-} else {
-	Channel
-	.fromPath( params.reads )
-	.filter { it =~/.*.bam/ }
-	.map { row -> [file( row )]}
-	.ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" } 
-	.set{ch_input_bamtofastq} 
-
-
+if (params.bam){
+        Channel
+        .fromPath( params.reads )
+        .filter { it =~/.*.bam/ }
+        .map { row -> [file( row )]}
+        .ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" }
+        .set{ch_input_bamtofastq}
+}
+else if (params.longreads){
+        Channel
+        .fromFilePairs( params.reads, size: 1 )
+        .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
+        .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'" }
+        .into{ch_input_fastqc;ch_input_porechop} 
+}
+else {
+        Channel
+        .fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
+        .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
+        .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'\nIf this is single-end data, please specify --singleEnd on the command line." }
+        .into{ch_input_bamtofastq;ch_input_fastqc;ch_input_fastp}
 }
 
 
@@ -100,6 +106,10 @@ if (params.bam) {
 } 
 
 
+if (params.longreads) {
+        
+}
+
 /*
  * QC- fastqc
  * Adaptor trimming- fastp
@@ -150,10 +160,18 @@ process fastp {
 	fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" 
 
 	"""
-	}
-
+	} 
 
 }
+/*
+process porechop {
+        
+        publishDir  "${params.outdir}/Porechop", mode: 'copy'
+        
+        input:
+        
+}*/
+
 
 process fastqc_after_trimming {
 
@@ -176,7 +194,7 @@ process fastqc_after_trimming {
 }
 
 
-/*process multiqc {
+process multiqc {
 
 	
 	tag "$name"
@@ -192,7 +210,7 @@ process fastqc_after_trimming {
 	"""
 	multiqc .
 	"""
-}*/
+}
 
 
 process retrieve_contaminants {
