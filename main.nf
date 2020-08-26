@@ -6,17 +6,17 @@ params.bam = false
 params.longreads = false
 params.reads = "data/*{1,2}.fastq.gz"
 params.outdir="$baseDir/results"
+params.db_build = false
+params.porechop = true
+params.fastp = true
 params.krakendb="$baseDir/results/databases/HumanViral"
 params.kaiju_db="$baseDir/results/databases/virus_kaiju"
-params.db_build = false
 params.GRCh38="/srv/rs6/sofia/Metoid/Metoid/results/databases/GCF_000001405.39_GRCh38.p13_genomic.fna"
-human_ref=file(params.GRCh38)
 params.accession_list="$baseDir/bin/accession_list.txt"
 params.contaminants="/srv/rs6/sofia/Metoid/Metoid/results/Contaminants/contaminants.fna"
 contaminants_file=file(params.contaminants)
+human_ref=file(params.GRCh38)
 params.porechopParam = "-t 4"
-params.porechop = true
-params.fastp = true
 params.fastpParam = "--thread 4"
 
 /* 
