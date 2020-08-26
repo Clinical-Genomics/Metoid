@@ -16,6 +16,8 @@ params.contaminants="/srv/rs6/sofia/Metoid/Metoid/results/Contaminants/contamina
 contaminants_file=file(params.contaminants)
 params.porechopParam = "-t 4"
 params.porechop = true
+params.fastp = true
+params.fastpParam = "--thread 4"
 
 /* 
  * Get input data
@@ -160,6 +162,8 @@ process fastp {
 	tag "$name"
 	publishDir  "${params.outdir}/fastp", mode: 'copy'
 
+        when: params.fastp
+
 	input:
 	set val(name), file(reads) from ch_input_fastp
 
@@ -171,19 +175,22 @@ process fastp {
 	script:
 	if(params.singleEnd || params.bam){
 
-	"""
-	fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" 
-	"""
-	}	
-	else {
-	"""
-	fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" 
-
-	"""
+        """
+        fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
+        """
+        }       
+        else {
+        """
+        fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
+        """
 	} 
-
 }
 
+if (!params.fastp) {
+        ch_input_fastp
+        .view()
+        .into {trimmed_reads_bowtie2, trimmed_reads_fastqc}
+}
 
 process fastqc_after_trimming {
 
