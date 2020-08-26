@@ -14,6 +14,8 @@ human_ref=file(params.GRCh38)
 params.accession_list="$baseDir/bin/accession_list.txt"
 params.contaminants="/srv/rs6/sofia/Metoid/Metoid/results/Contaminants/contaminants.fna"
 contaminants_file=file(params.contaminants)
+params.porechopParam = "-t 4"
+params.porechop = true
 
 /* 
  * Get input data
@@ -100,13 +102,9 @@ if (params.bam) {
 } 
 
 
-if (params.longreads) {
-        
-}
-
 /*
  * QC- fastqc
- * Adaptor trimming- fastp
+ * Adaptor trimming - fastp, porechop
  * Do we need fastqc control on trimmed data
  */
 
@@ -128,6 +126,34 @@ process fastqc {
 	fastqc -t "${task.cpus}" -q $reads --extract
 	"""
 }
+
+if (params.longreads) {
+process porechop {
+        
+        publishDir  "${params.outdir}/Porechop", mode: 'copy'
+        
+        when: params.porechop        
+
+        input:
+        set val(name), file(reads) from ch_input_porechop
+
+        
+        output:
+        set val(name), file("*_chopped.fastq.gz") into (ch_input_fastp)
+
+        script:
+        """
+        porechop -i $reads -o ${name}_chopped.fastq.gz --format fastq.gz $params.porechopParam
+        """
+       
+}}
+
+if (params.longreads && !params.porechop) {
+        ch_input_porechop
+        .view()
+        .into {ch_input_fastp}
+}
+
 
 process fastp {
 
@@ -157,14 +183,6 @@ process fastp {
 	} 
 
 }
-/*
-process porechop {
-        
-        publishDir  "${params.outdir}/Porechop", mode: 'copy'
-        
-        input:
-        
-}*/
 
 
 process fastqc_after_trimming {
@@ -183,7 +201,6 @@ process fastqc_after_trimming {
         """
         fastqc -t "${task.cpus}" -q $reads --extract
         """
-
 
 }
 
