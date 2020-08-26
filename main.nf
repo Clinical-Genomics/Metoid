@@ -41,21 +41,20 @@ else {
         .fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
         .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
         .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'\nIf this is single-end data, please specify --singleEnd on the command line." }
-        .into{ch_input_bamtofastq;ch_input_fastqc;ch_input_fastp}
+        .into{ch_input_fastqc;ch_input_fastp}
 }
 
 
 /*
- * PREPROCESSING - Change name and convert bam to fastq
+ * PREPROCESSING BAM INPUT - Change name and convert bam to fastq
  *
  */
 
+if (params.bam) {
 process renameBam {
 
         tag "$bam"
         publishDir "${params.outdir}/renameBam", mode: 'copy'
-
-        when: params.bam
 
         input:
         file bam from ch_input_bamtofastq
@@ -63,8 +62,6 @@ process renameBam {
  	output:
 	file ("*.bam") into ch_renamebam
 		
- 
-	
         script:
 
         new_bam="\$(samtools view -h ${bam} | grep -P '\tSM:' | head -n 1 | sed 's/.\\+SM:\\(.\\+\\)/\\1/' | sed 's/\t.\\+//' | sed 's/\\s/_/g')"
@@ -73,16 +70,13 @@ process renameBam {
         cp ${bam} "$new_bam".bam
         """
 
-} 
+}} 
 
-
+if (params.bam) {
 process BamToFastq {
 	
 	tag "$bam"
 	publishDir "${params.outdir}/BamToFastq", mode: 'copy'
-
-
-	when: params.bam 
 
 	input:
         file bam from ch_renamebam
@@ -95,7 +89,7 @@ process BamToFastq {
 	"""
 	samtools fastq -tn ${bam} | gzip > ${base}.fastq.gz 
 	"""
-} 
+}} 
 
 
 if (params.bam) {
