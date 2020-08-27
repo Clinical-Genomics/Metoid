@@ -142,12 +142,12 @@ process fastp {
 	if(params.singleEnd || params.bam){
 
 	"""
-	fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" 
+	fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" -q 20 -l 100
 	"""
 	}	
 	else {
 	"""
-	fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" 
+	fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" -q 20 -l 100
 
 	"""
 	}
@@ -195,7 +195,7 @@ process fastqc_after_trimming {
 }*/
 
 
-process retrieve_contaminants {
+/*process retrieve_contaminants {
 
 	publishDir "${params.outdir}/Contaminants", mode: 'copy'
 
@@ -208,10 +208,10 @@ process retrieve_contaminants {
         RetrieveContaminants.py ${params.outdir}/Contaminants ${params.accession_list} 
 	"""
 
-}
+} */
 
 
-process index_contaminants {
+/*process index_contaminants {
 
 	input:
 	file cont_genomes from contaminants_file
@@ -224,10 +224,10 @@ process index_contaminants {
 	bowtie2-build $cont_genomes index
 	"""
 
-}
+} */
 
 
-process index_host {
+/*process index_host {
 
 	when: params.db_build
 
@@ -242,14 +242,14 @@ process index_host {
         """
 	bowtie2-build $host_genome index
         """
-} 
+} */
 
-ch_index_host
+/*ch_index_host
 	.mix (ch_index_contaminants)
-	.set {bowtie2_input}
+	.set {bowtie2_input} */
 
 
-process bowtie2 {
+/*process bowtie2 {
 	
 	tag "$name"
 	publishDir "${params.outdir}/bowtie2", mode: 'copy'
@@ -290,9 +290,9 @@ process bowtie2 {
         }
 
 }
+*/
 
-
-process krakenBuild {
+/*process krakenBuild {
 
 	publishDir "${params.outdir}/databases", mode: 'copy'
 
@@ -307,10 +307,10 @@ process krakenBuild {
 		
 	"""
 	
-} 
+} */
 
 
-process kraken2 {
+/*process kraken2 {
 	
 	tag "$name"
 	
@@ -340,9 +340,9 @@ process kraken2 {
             """
         }
 
-} 
+} */
 
-process krona_taxonomy {
+/*process krona_taxonomy {
     
 
     output:
@@ -353,12 +353,12 @@ process krona_taxonomy {
     """
     ktUpdateTaxonomy.sh taxonomy
     """
-}
+}*/
 
 
 
 
-process krona_kraken {
+/*process krona_kraken {
 
     tag "$name"
 
@@ -377,9 +377,9 @@ process krona_kraken {
     """
     ktImportTaxonomy -o ${name}.krona.html -t 3 -s 4 ${name}.kraken.out.txt -tax taxonomy
     """
-}
+} */
 
-process kaiju {
+/*process kaiju {
 
     tag "$name"
    
@@ -409,9 +409,9 @@ process kaiju {
     """
     }
 
-}
+} */
 
-process krona_kaiju {
+/*process krona_kaiju {
 
     tag "$name"
 
@@ -430,6 +430,6 @@ process krona_kaiju {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
-}
+} */
 
 

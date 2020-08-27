@@ -5,7 +5,7 @@ For the docker image:
 - Create environment.yml and Dockerfile
 - docker build -t metoid_ks .
 - docker run -ti metoid_ks
-- nextflow run main.nf '--reads=data/*.bam' --bam --kraken2_build-with-docker metoid_ks (if the kraken database will be rebuilt and updated)
+- nextflow run main.nf '--reads=data/*.bam' --bam --kraken2_build -with-docker metoid_ks (if the kraken database will be rebuilt and updated)
 
 
 
