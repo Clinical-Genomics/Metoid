@@ -3,53 +3,62 @@
 params.singleEnd = false
 params.pairedEnd = false
 params.bam = false
+params.longreads = false
 params.reads = "data/*{1,2}.fastq.gz"
 params.outdir="$baseDir/results"
+params.db_build = false
+params.porechop = true
+params.fastp = true
 params.krakendb="$baseDir/results/databases/HumanViral"
 params.kaiju_db="$baseDir/results/databases/virus_kaiju"
-params.db_build = false
 params.GRCh38="/srv/rs6/sofia/Metoid/Metoid/results/databases/GCF_000001405.39_GRCh38.p13_genomic.fna"
-human_ref=file(params.GRCh38)
 params.accession_list="$baseDir/bin/accession_list.txt"
 params.contaminants="/srv/rs6/sofia/Metoid/Metoid/results/Contaminants/contaminants.fna"
 contaminants_file=file(params.contaminants)
+human_ref=file(params.GRCh38)
+params.porechopParam = "-t 4"
+params.fastpParam = "--thread 4"
 
 /* 
- * Check if we get 4 files for paired-end reads
+ * Get input data
  *
  */
 
 
-if (!params.bam){
-	Channel
-	.fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
-	.filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
-	.ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'\nIf this is single-end data, please specify --singleEnd on the command line." }
-	.into{ch_input_bamtofastq;ch_input_fastqc;ch_input_fastp} 
-
-} else {
-	Channel
-	.fromPath( params.reads )
-	.filter { it =~/.*.bam/ }
-	.map { row -> [file( row )]}
-	.ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" } 
-	.set{ch_input_bamtofastq} 
-
-
+if (params.bam){
+        Channel
+        .fromPath( params.reads )
+        .filter { it =~/.*.bam/ }
+        .map { row -> [file( row )]}
+        .ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" }
+        .set{ch_input_bamtofastq}
+}
+else if (params.longreads){
+        Channel
+        .fromFilePairs( params.reads, size: 1 )
+        .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
+        .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'" }
+        .into{ch_input_fastqc;ch_input_porechop} 
+}
+else {
+        Channel
+        .fromFilePairs( params.reads, size: params.singleEnd ? 1 : 2 )
+        .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
+        .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'\nIf this is single-end data, please specify --singleEnd on the command line." }
+        .into{ch_input_fastqc;ch_input_fastp}
 }
 
 
 /*
- * PREPROCESSING - Change name and convert bam to fastq
+ * PREPROCESSING BAM INPUT - Change name and convert bam to fastq
  *
  */
 
+if (params.bam) {
 process renameBam {
 
         tag "$bam"
         publishDir "${params.outdir}/renameBam", mode: 'copy'
-
-        when: params.bam
 
         input:
         file bam from ch_input_bamtofastq
@@ -57,8 +66,6 @@ process renameBam {
  	output:
 	file ("*.bam") into ch_renamebam
 		
- 
-	
         script:
 
         new_bam="\$(samtools view -h ${bam} | grep -P '\tSM:' | head -n 1 | sed 's/.\\+SM:\\(.\\+\\)/\\1/' | sed 's/\t.\\+//' | sed 's/\\s/_/g')"
@@ -67,16 +74,13 @@ process renameBam {
         cp ${bam} "$new_bam".bam
         """
 
-} 
+}} 
 
-
+if (params.bam) {
 process BamToFastq {
 	
 	tag "$bam"
 	publishDir "${params.outdir}/BamToFastq", mode: 'copy'
-
-
-	when: params.bam 
 
 	input:
         file bam from ch_renamebam
@@ -89,7 +93,7 @@ process BamToFastq {
 	"""
 	samtools fastq -tn ${bam} | gzip > ${base}.fastq.gz 
 	"""
-} 
+}} 
 
 
 if (params.bam) {
@@ -102,7 +106,7 @@ if (params.bam) {
 
 /*
  * QC- fastqc
- * Adaptor trimming- fastp
+ * Adaptor trimming - fastp, porechop
  * Do we need fastqc control on trimmed data
  */
 
@@ -125,10 +129,39 @@ process fastqc {
 	"""
 }
 
+if (params.longreads) {
+process porechop {
+        
+        publishDir  "${params.outdir}/Porechop", mode: 'copy'
+        
+        when: params.porechop        
+
+        input:
+        set val(name), file(reads) from ch_input_porechop
+
+        
+        output:
+        set val(name), file("*_chopped.fastq.gz") into ch_input_fastp
+
+        script:
+        """
+        porechop -i $reads -o ${name}_chopped.fastq.gz --format fastq.gz $params.porechopParam
+        """
+       
+}}
+
+if (params.longreads && !params.porechop) {
+        ch_input_porechop
+        .view()
+        .into {ch_input_fastp}
+}
+
 process fastp {
 
 	tag "$name"
 	publishDir  "${params.outdir}/fastp", mode: 'copy'
+
+        when: params.fastp
 
 	input:
 	set val(name), file(reads) from ch_input_fastp
@@ -141,6 +174,7 @@ process fastp {
 	script:
 	if(params.singleEnd || params.bam){
 
+<<<<<<< HEAD
 	"""
 	fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" -q 20 -l 100
 	"""
@@ -152,7 +186,23 @@ process fastp {
 	"""
 	}
 
+=======
+        """
+        fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
+        """
+        }       
+        else {
+        """
+        fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
+        """
+	} 
+}
+>>>>>>> origin/add_nanopore_trimming
 
+if (!params.fastp) {
+        ch_input_fastp
+        .view()
+        .into {trimmed_reads_bowtie2, trimmed_reads_fastqc}
 }
 
 process fastqc_after_trimming {
@@ -172,11 +222,9 @@ process fastqc_after_trimming {
         fastqc -t "${task.cpus}" -q $reads --extract
         """
 
-
 }
 
-
-/*process multiqc {
+process multiqc {
 
 	
 	tag "$name"
@@ -192,8 +240,13 @@ process fastqc_after_trimming {
 	"""
 	multiqc .
 	"""
-}*/
+}
 
+
+/*
+ * BUILD DATABASES
+ *
+ */
 
 process retrieve_contaminants {
 
@@ -210,7 +263,6 @@ process retrieve_contaminants {
 
 } 
 
-
 process index_contaminants {
 
 	input:
@@ -223,9 +275,12 @@ process index_contaminants {
 	"""
 	bowtie2-build $cont_genomes index
 	"""
+<<<<<<< HEAD
 
 } 
-
+=======
+}
+>>>>>>> origin/add_nanopore_trimming
 
 process index_host {
 
@@ -248,6 +303,27 @@ ch_index_host
 	.mix (ch_index_contaminants)
 	.set {bowtie2_input} 
 
+process krakenBuild {
+
+        publishDir "${params.outdir}/databases", mode: 'copy'
+
+        when: params.db_build
+
+
+        script:
+
+        """
+        mkdir -p ${params.outdir}/databases
+        UpdateKrakenDatabases.py ${params.outdir}/databases
+
+        """
+}
+
+
+/*
+ * FILTER READS
+ *
+ */
 
 process bowtie2 {
 	
@@ -291,24 +367,10 @@ process bowtie2 {
 
 }
 
-
-process krakenBuild {
-
-	publishDir "${params.outdir}/databases", mode: 'copy'
-
-	when: params.db_build
-
-
-	script:
-
-	"""
-        mkdir -p ${params.outdir}/databases
-	UpdateKrakenDatabases.py ${params.outdir}/databases 
-		
-	"""
-	
-} 
-
+/*
+ * TAXONOMIC CLASSIFICATION
+ *
+ */
 
 process kraken2 {
 	
@@ -430,6 +492,10 @@ process krona_kaiju {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
+<<<<<<< HEAD
 } 
 
 
+=======
+}
+>>>>>>> origin/add_nanopore_trimming
