@@ -18,4 +18,5 @@ dependencies:
   - bedtools
   - kaiju=1.6.3
   - centrifuge
+  - porechop
   
