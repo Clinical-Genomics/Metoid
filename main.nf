@@ -141,7 +141,7 @@ process porechop {
 
         
         output:
-        set val(name), file("*_chopped.fastq.gz") into (ch_input_fastp)
+        set val(name), file("*_chopped.fastq.gz") into ch_input_fastp
 
         script:
         """
@@ -155,7 +155,6 @@ if (params.longreads && !params.porechop) {
         .view()
         .into {ch_input_fastp}
 }
-
 
 process fastp {
 
@@ -211,7 +210,6 @@ process fastqc_after_trimming {
 
 }
 
-
 process multiqc {
 
 	
@@ -229,6 +227,7 @@ process multiqc {
 	multiqc .
 	"""
 }
+
 
 /*
  * BUILD DATABASES
@@ -300,6 +299,7 @@ process krakenBuild {
 
         """
 }
+
 
 /*
  * FILTER READS
@@ -474,5 +474,3 @@ process krona_kaiju {
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
 }
-
-
