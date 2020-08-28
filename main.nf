@@ -17,7 +17,7 @@ params.contaminants="/srv/rs6/sofia/Metoid/Metoid/results/Contaminants/contamina
 contaminants_file=file(params.contaminants)
 human_ref=file(params.GRCh38)
 params.porechopParam = "-t 4"
-params.fastpParam = "--thread 4"
+params.fastpParam = "--thread 4 -q 20 -l 100"
 
 /* 
  * Get input data
@@ -173,20 +173,6 @@ process fastp {
 
 	script:
 	if(params.singleEnd || params.bam){
-
-<<<<<<< HEAD
-	"""
-	fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" -q 20 -l 100
-	"""
-	}	
-	else {
-	"""
-	fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" -q 20 -l 100
-
-	"""
-	}
-
-=======
         """
         fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
         """
@@ -197,7 +183,6 @@ process fastp {
         """
 	} 
 }
->>>>>>> origin/add_nanopore_trimming
 
 if (!params.fastp) {
         ch_input_fastp
@@ -242,7 +227,6 @@ process multiqc {
 	"""
 }
 
-
 /*
  * BUILD DATABASES
  *
@@ -275,12 +259,7 @@ process index_contaminants {
 	"""
 	bowtie2-build $cont_genomes index
 	"""
-<<<<<<< HEAD
-
 } 
-=======
-}
->>>>>>> origin/add_nanopore_trimming
 
 process index_host {
 
@@ -401,7 +380,6 @@ process kraken2 {
 
             """
         }
-
 } 
 
 process krona_taxonomy {
@@ -416,9 +394,6 @@ process krona_taxonomy {
     ktUpdateTaxonomy.sh taxonomy
     """
 }
-
-
-
 
 process krona_kraken {
 
@@ -492,10 +467,4 @@ process krona_kaiju {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
-<<<<<<< HEAD
 } 
-
-
-=======
-}
->>>>>>> origin/add_nanopore_trimming
