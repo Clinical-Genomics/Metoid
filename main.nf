@@ -45,7 +45,8 @@ def help() {
         --<param> "value"
         
         --porechopParam    Settings for trimming with Porechop
-        --fastpParam       Settings for trimming with Fastp
+        --fastpParamLong   Settings for trimming with Fastp for long read data
+        --fastpParamShort  Settings for trimming with Fastp for short read data
         --krakenDB         Kraken2 database path
         --kaijuDB          Kaiju database path
         --hostReference    Host reference fasta path
@@ -73,13 +74,15 @@ if (params.bam){
         .map { row -> [file( row )]}
         .ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" }
         .set{ch_input_bamtofastq}
+        params.fastpParam = params.fastpParamShort
 }
 else if (params.longRead){
         Channel
         .fromFilePairs( params.reads, size: 1 )
         .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
         .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'" }
-        .into{ch_input_fastqc;ch_input_porechop} 
+        .into{ch_input_fastqc;ch_input_porechop}
+        params.fastpParam = params.fastpParamLong 
 }
 else {
         Channel
@@ -87,6 +90,7 @@ else {
         .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
         .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'\nIf this is single-end data, please specify --singleEnd on the command line." }
         .into{ch_input_fastqc;ch_input_fastp}
+        params.fastpParam = params.fastpParamShort
 }
 
 
@@ -291,7 +295,7 @@ process retrieve_contaminants {
 process index_contaminants {
 
 	input:
-	file cont_genomes fromPath params.contaminants
+	file cont_genomes from params.contaminants
 
 	output:
 	file 'index*' into ch_index_contaminants
@@ -307,7 +311,7 @@ process index_host {
 	when: params.build
 
 	input:
-	file host_genome fromPath params.hostReference
+	file host_genome from params.hostReference
 
 	output:
 	file 'index*' into ch_index_host
