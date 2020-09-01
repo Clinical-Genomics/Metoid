@@ -1,4 +1,63 @@
 #!/usr/bin/env nextflow
+def help() {
+        log.info"""
+        nextflow <nextflow options> run main.nf <options>
+        
+        IMPORTANT
+        -profile Comma-separated list of run profiles to use
+        
+                 Process executor profiles:
+                 local - run processes locally
+                 slurm - run processes using a slurm resource manager
+                 
+                 Container and environments profiles:
+                 docker - run processes in docker images
+                 singularity - run processes in singularity images
+        
+        --reads  input files for sample [default:"data/*{1,2}.fastq.gz"]
+        --outdir directory for output [default:"results/"]
+        
+        --singleEnd   Input is single read data [default:false]
+        --pairedEnd   Input is paired end data [default:false]
+        --bam         Input bam file [default:false]
+        --longRead    Input is long read data, e.g. nanopore [default:false]
+        
+        CONFIG FILE
+        Nextflow will by default find configuration files in the following locations:
+                  "nextflow.config" in current directory
+                  "nextflow.config" in script directory
+                  "$HOME/.nextflow/config"
+        
+        -c        Path to additional config file
+        -C        Path to config file. Other config files are ignored.
+        
+        OPTIONS
+        --build       Build all databases [default:false]
+        --porechop    Run Porechop trimming (only if long read data) [default:true]
+        --fastp       Run Fastp trimming [default:true]
+        --help        Display this help message and exit
+        
+        PARAMETERS
+        Refer to the config file to see or change the default parameters used in the pipeline.
+        
+        To change a parameter for a single run, use:
+        --<param> "value"
+        
+        --porechopParam    Settings for trimming with Porechop
+        --fastpParam       Settings for trimming with Fastp
+        --krakenDB         Kraken2 database path
+        --kaijuDB          Kaiju database path
+        --hostReference    Host reference fasta path
+        --contaminants     Fasta file with contaminant species
+        --contaminantList  File with list of contaminant species
+        """
+}
+
+
+if (params.help) {
+        help()
+        exit 0
+}
 
 /* 
  * Get input data
@@ -14,7 +73,7 @@ if (params.bam){
         .ifEmpty { exit 1, "Cannot find any bam file matching: ${params.reads}\nValid input file types: '.bam'" }
         .set{ch_input_bamtofastq}
 }
-else if (params.longreads){
+else if (params.longRead){
         Channel
         .fromFilePairs( params.reads, size: 1 )
         .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
@@ -110,7 +169,7 @@ process fastqc {
 	"""
 }
 
-if (params.longreads) {
+if (params.longRead) {
 process porechop {
         
         publishDir  "${params.outdir}/Porechop", mode: 'copy'
@@ -131,7 +190,7 @@ process porechop {
        
 }}
 
-if (params.longreads && !params.porechop) {
+if (params.longRead && !params.porechop) {
         ch_input_porechop
         .view()
         .into {ch_input_fastp}
@@ -217,13 +276,13 @@ process retrieve_contaminants {
 
 	publishDir "${params.outdir}/Contaminants", mode: 'copy'
 
-	when: params.db_build
+	when: params.build
 
         script:
 
         """
         mkdir -p ${params.outdir}/Contaminants
-        RetrieveContaminants.py ${params.outdir}/Contaminants ${params.accession_list} 
+        RetrieveContaminants.py ${params.outdir}/Contaminants ${params.contaminantList} 
 	"""
 
 } 
@@ -244,7 +303,7 @@ process index_contaminants {
 
 process index_host {
 
-	when: params.db_build
+	when: params.build
 
 	input:
 	file host_genome fromPath params.hostReference
@@ -266,7 +325,7 @@ process krakenBuild {
 
         publishDir "${params.outdir}/databases", mode: 'copy'
 
-        when: params.db_build
+        when: params.build
 
 
         script:
@@ -352,11 +411,11 @@ process kraken2 {
         kreport = name+".kraken.report"
         if (params.pairedEnd){
             """
-            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
+            kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
             """    
         } else {
             """
-            kraken2 --db ${params.krakendb} --threads ${task.cpus} --output $out --report $kreport ${reads[0]} 
+            kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport ${reads[0]} 
 
             """
         }
@@ -415,13 +474,13 @@ process kaiju {
 
     if (params.pairedEnd){
     """
-    kaiju -x -v -t ${params.kaiju_db}/nodes.dmp -f ${params.kaiju_db}/kaiju_db_viruses.fmi -i ${reads[0]} -j ${reads[1]} -o $out
-    kaiju2krona -t ${params.kaiju_db}/nodes.dmp -n ${params.kaiju_db}/names.dmp -i $out -o $krona_kaiju    
+    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -j ${reads[1]} -o $out
+    kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
     """
     } else {
     """
-    kaiju -x -v -t ${params.kaiju_db}/nodes.dmp -f ${params.kaiju_db}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
-    kaiju2krona -t ${params.kaiju_db}/nodes.dmp -n ${params.kaiju_db}/names.dmp -i $out -o $krona_kaiju
+    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
+    kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
             
     """
     }
