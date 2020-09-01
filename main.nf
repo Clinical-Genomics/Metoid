@@ -26,8 +26,9 @@ def help() {
         Nextflow will by default find configuration files in the following locations:
                   "nextflow.config" in current directory
                   "nextflow.config" in script directory
-                  "$HOME/.nextflow/config"
-        
+                  "~/.nextflow/config"
+
+        Specify config file with nextflow options:        
         -c        Path to additional config file
         -C        Path to config file. Other config files are ignored.
         
@@ -227,7 +228,7 @@ process fastp {
 if (!params.fastp) {
         ch_input_fastp
         .view()
-        .into {trimmed_reads_bowtie2, trimmed_reads_fastqc}
+        .into {trimmed_reads_bowtie2; trimmed_reads_fastqc}
 }
 
 process fastqc_after_trimming {
