@@ -149,22 +149,22 @@ def download_viral_genomes(outfile='outfile.txt'):
     return
 
 
-#print('Downloading human genome'+'\n')
+print('Downloading human genome'+'\n')
 #change argument in the following function if you want to download other reference genomes
 #taxonomy ID 9606 (human) should be replaced with taxonomy ID of genome of interest
-#download_refseq_genome(9606,'human_genome_url.txt')
+download_refseq_genome(9606,'human_genome_url.txt')
 
 
-#print('Downloading bacterial genomes'+'\n')
-#download_bacterial_genomes('bacterial_complete_genome_url.txt')
+print('Downloading bacterial genomes'+'\n')
+download_bacterial_genomes('bacterial_complete_genome_url.txt')
 
-#download_viral_genomes('viral_complete_genome_url.txt')
+download_viral_genomes('viral_complete_genome_url.txt')
 
 #download_contaminants('contaminants_complete_genome_url.txt')
 
 #Set name for the krakendb directory
 #os.chdir("/srv/rs6/sofia/Metoid/Metoid/Test")
-krakendb='HumanViral'
+krakendb='HumanViralBacteria'
 #kraken_dir="/srv/rs6/sofia/Metoid/Metoid/results/databases"
 #human_db="Human"
 #human_path=os.path.join(kraken_dir, human_db)
