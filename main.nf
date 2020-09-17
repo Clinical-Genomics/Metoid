@@ -212,14 +212,14 @@ process fastp {
 	set val(name), file(reads) from ch_input_fastp
 
 	output:
-	set val(name), file("*_trimmed.fastq.gz") into (trimmed_reads_bowtie2, trimmed_reads_fastqc)	
+	set val(name), file("*.trimmed.fastq.gz") into (trimmed_reads_bowtie2, trimmed_reads_fastqc)	
 	file("*.html")
 	file ("*_fastp.json")
 
 	script:
 	if(params.singleEnd || params.bam){
         """
-        fastp -i "${reads[0]}" -o "${name}_trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
+        fastp -i "${reads[0]}" -o "${name}.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
         """
         }       
         else {
