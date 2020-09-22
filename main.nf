@@ -148,13 +148,11 @@ if (params.bam) {
 
 } 
 
-
 /*
  * QC- fastqc
  * Adaptor trimming - fastp, porechop
  * Do we need fastqc control on trimmed data
  */
-
 
 process fastqc {
 	
@@ -338,7 +336,26 @@ process krakenBuild {
         """
         mkdir -p ${params.outdir}/databases
         UpdateKrakenDatabases.py ${params.outdir}/databases
+        """
+}
 
+process kaijuBuild {
+
+        publishDir "${params.kaijuDB}", mode: 'copy' 
+        time "48h" 
+        cpus 5
+        memory "65 GB"
+
+        when: params.build || params.buildKaiju  
+
+        output:
+        file "kaiju_db_*.fmi"
+        file "nodes.dmp"
+        file "names.dmp"
+
+        script:
+        """
+        kaiju-makedb -s ${params.kaijuSourceDB} -t ${task.cpus} 
         """
 }
 
@@ -511,4 +528,5 @@ process krona_kaiju {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
-} 
+}
+
