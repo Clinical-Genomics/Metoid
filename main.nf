@@ -33,10 +33,20 @@ def help() {
         -C        Path to config file. Other config files are ignored.
         
         OPTIONS
-        --build       Build all databases [default:false]
-        --porechop    Run Porechop trimming (only if long read data) [default:true]
-        --fastp       Run Fastp trimming [default:true]
-        --help        Display this help message and exit
+        --build              Build all databases and index all references [default:false]
+        --buildKraken2       Build Kraken2 database [default:false]
+        --buildHost          Index host reference [default:false]
+        --buildContaminants  Index contaminant references [default:false]
+
+        --porechop           Run Porechop trimming (only if long read data) [default:true]
+        --fastp              Run Fastp trimming [default:true]
+        --fastqcPre          Run fastqc on raw data [default:true]
+        --fastqcPost         Run fastqc on trimmed data [default:true]
+        --filterBowtie2      Run filtering of host and/or contaminants [default:true]
+        --kraken2            Run kraken2 taxonomic classification [default:true]
+        --kaiju              Run kaiju taxonomic classification [default:true]
+        --multiqc            Run multiqc [default:true]
+        --help               Display this help message and exit
         
         PARAMETERS
         Refer to the config file to see or change the default parameters used in the pipeline.
@@ -44,17 +54,18 @@ def help() {
         To change a parameter for a single run, use:
         --<param> "value"
         
-        --porechopParam    Settings for trimming with Porechop
-        --fastpParamLong   Settings for trimming with Fastp for long read data
-        --fastpParamShort  Settings for trimming with Fastp for short read data
-        --krakenDB         Kraken2 database path
-        --kaijuDB          Kaiju database path
-        --hostReference    Host reference fasta path
-        --contaminants     Fasta file with contaminant species
-        --contaminantList  File with list of contaminant species
+        --porechopParam          Settings for trimming with Porechop
+        --fastpParamLong         Settings for trimming with Fastp for long read data
+        --fastpParamShort        Settings for trimming with Fastp for short read data
+        --krakenDB               Kraken2 database path
+        --kaijuDB                Kaiju database path
+        --references             Location of indexed references
+        --hostReference          Host reference fasta path
+        --hostFTP                Alternatively: FTP for downloading host reference
+        --contaminantReferences  Fasta file with contaminant species
+        --contaminantList        Alternatively: File with accession numbers for contaminants
         """
 }
-
 
 if (params.help) {
         help()
@@ -65,7 +76,6 @@ if (params.help) {
  * Get input data
  *
  */
-
 
 if (params.bam){
         Channel
@@ -93,7 +103,6 @@ else {
         params.fastpParam = params.fastpParamShort
 }
 
-
 /*
  * PREPROCESSING BAM INPUT - Change name and convert bam to fastq
  *
@@ -118,7 +127,6 @@ process renameBam {
         """
         cp ${bam} "$new_bam".bam
         """
-
 }} 
 
 if (params.bam) {
@@ -140,14 +148,11 @@ process BamToFastq {
 	"""
 }} 
 
-
 if (params.bam) {
 	ch_output_bamtofastq
         .view()
 	.into {ch_input_fastqc; ch_input_fastp} 
-
 } 
-
 
 /*
  * QC- fastqc
@@ -155,8 +160,9 @@ if (params.bam) {
  * Do we need fastqc control on trimmed data
  */
 
-
 process fastqc {
+
+        when params.fastqcPre
 	
 	tag "$name"
 	publishDir  "${params.outdir}/FastQC", mode: 'copy'
@@ -166,7 +172,6 @@ process fastqc {
 
 	output:
 	file "*_fastqc.{zip,html}" into fastqc_results
-
 
 	script:
 	"""
@@ -184,7 +189,6 @@ process porechop {
         input:
         set val(name), file(reads) from ch_input_porechop
 
-        
         output:
         set val(name), file("*_chopped.fastq.gz") into ch_input_fastp
 
@@ -198,9 +202,10 @@ process porechop {
 if (params.longRead && !params.porechop) {
         ch_input_porechop
         .view()
-        .into {ch_input_fastp}
+        .set {ch_input_fastp}
 }
 
+ if (params.fastp) {
 process fastp {
 
 	tag "$name"
@@ -227,15 +232,17 @@ process fastp {
         fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
         """
 	} 
-}
+}}
 
-if (!params.fastp) {
+else {
         ch_input_fastp
         .view()
         .into {trimmed_reads_bowtie2; trimmed_reads_fastqc}
 }
 
 process fastqc_after_trimming {
+
+        when params.fastqcPost
 
 	tag "$name"
         publishDir  "${params.outdir}/FastQC", mode: 'copy'
@@ -251,11 +258,11 @@ process fastqc_after_trimming {
         """
         fastqc -t "${task.cpus}" -q $reads --extract
         """
-
 }
 
 process multiqc {
 
+        when: params.multiqc
 	
 	tag "$name"
 	publishDir "${params.outdir}/multiqc", mode: 'copy'
@@ -277,77 +284,133 @@ process multiqc {
  *
  */
 
+if (params.contaminantReferences == "") {
 process retrieve_contaminants {
 
-	publishDir "${params.outdir}/Contaminants", mode: 'copy'
+	publishDir "${params.references}/contaminants/", mode: 'copy'
 
-	when: params.build
+	when: params.build || params.buildContaminants
+        
+        input:
+        path contaminants from params.contaminantList
+
+        output:
+        file "contaminants.fna" into ch_contaminants_reference
 
         script:
-
         """
-        mkdir -p ${params.outdir}/Contaminants
-        RetrieveContaminants.py ${params.outdir}/Contaminants ${params.contaminantList} 
-	"""
+        RetrieveContaminants.py . ${contaminants}
+        """
+}}
 
-} 
+else {
+        Channel
+        .fromPath(params.contaminantReferences)
+        .set {ch_contaminants_reference}
+}
 
 process index_contaminants {
 
-	input:
-	file cont_genomes from params.contaminants
+        publishDir "${params.references}/contaminants/", mode: 'copy'
 
-	output:
-	file 'index*' into ch_index_contaminants
+        when: params.build || params.buildContaminants
 
-	script:
-	"""
-	bowtie2-build $cont_genomes index
-	"""
-} 
+        input:
+        file genome from ch_contaminants_reference
+
+        output:
+        file 'index*' into ch_contaminants_index
+
+        script:
+        """
+        bowtie2-build ${genome} index
+        """
+}
+
+// Get prebuilt contaminant indices
+if (params.filterContaminants && !params.build && !params.buildContaminants) {
+        Channel
+        .fromPath("${params.references}/contaminants/*.bt2")
+        .set {ch_contaminants_index}
+}
+
+if (params.hostReference == "") {
+process retrieve_host {
+
+        publishDir "${params.references}/host", mode: 'copy'
+
+        when: params.build || params.buildHost
+
+        output:
+        file "*.fna.gz" into ch_host_reference        
+
+        script:
+        """
+        wget ${params.hostFTP} 
+        """
+}}
+
+else {
+        Channel
+        .fromPath(params.hostReference)
+        .set {ch_host_reference}
+}
 
 process index_host {
 
-	when: params.build
+        publishDir "${params.references}/host", mode: 'copy'
 
-	input:
-	file host_genome from params.hostReference
-
-	output:
-	file 'index*' into ch_index_host
-
-	script:
+        when: params.build || params.buildHost
+      
+        input:
+        file genome from ch_host_reference
+ 
+        output:
+        file 'index*' into ch_host_index
+ 
+        script:
         """
-	bowtie2-build $host_genome index
+        bowtie2-build ${genome} index
         """
-} 
+}
 
-ch_index_host
-	.mix (ch_index_contaminants)
+// Get prebuilt host indices
+if (!params.build && !params.buildHost) {
+        Channel
+        .fromPath("${params.references}/host/*.bt2")
+        .set {ch_host_index}
+}
+
+// Join host and contaminant indices
+if (params.filterContaminants) {
+ch_host_index
+	.mix (ch_contaminants_index)
 	.set {bowtie2_input} 
+}
+else {
+ch_host_index.set {bowtie2_input}
+}
 
 process krakenBuild {
 
         publishDir "${params.outdir}/databases", mode: 'copy'
 
-        when: params.build
-
+        when: params.build || params.buildKraken2
 
         script:
 
         """
         mkdir -p ${params.outdir}/databases
         UpdateKrakenDatabases.py ${params.outdir}/databases
-
         """
 }
-
 
 /*
  * FILTER READS
  *
  */
 
+if (params.filterBowtie2) {
 process bowtie2 {
 	
 	tag "$name"
@@ -358,7 +421,7 @@ process bowtie2 {
 	file(index) from bowtie2_input.collect()
 
 	output:
-        set val(name), file("*_removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju)
+        set val(name), file("*.removed.fastq.gz") into (ch_bowtie2_kraken, ch_bowtie2_kaiju)
 	
 	script:
 	samfile = name+".sam"
@@ -377,6 +440,7 @@ process bowtie2 {
 	samtools view -b -f4 $bamfile > $unmapped_bam
 	samtools sort -n $unmapped_bam -o $bam_sorted
 	bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
+        gzip "*.fastq"
         """
         }else {
         """
@@ -384,10 +448,16 @@ process bowtie2 {
 	samtools view -Sb $samfile > $bamfile
         samtools view -b -f4 $bamfile > $unmapped_bam
         samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bam_sorted -fq "${name}_removed.fastq"
+	bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
+        gzip "*.fastq"
         """
         }
+}}
 
+else  {
+        trimmed_reads_bowtie2
+        .view()
+        .into {ch_bowtie2_kraken; ch_bowtie2_kaiju}
 }
 
 /*
@@ -395,21 +465,19 @@ process bowtie2 {
  *
  */
 
+if (params.kraken2) {
 process kraken2 {
 	
 	tag "$name"
 	
 	publishDir "${params.outdir}/kraken2", mode: 'copy'
 
-
 	input:
         set val(name), file(reads) from ch_bowtie2_kraken
-
 
 	output:
         set val(name), file("*.kraken.out.txt") into kraken_out
         set val(name), file("*.kraken.report") into kraken_report 
-
 
 	script:
         out = name+".kraken.out.txt"
@@ -421,17 +489,14 @@ process kraken2 {
         } else {
             """
             kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport ${reads[0]} 
-
             """
         }
 } 
 
 process krona_taxonomy {
     
-
     output:
     file("taxonomy/taxonomy.tab") into file_krona_taxonomy
-
 
     script:
     """
@@ -445,7 +510,6 @@ process krona_kraken {
 
     publishDir "${params.outdir}/krona_kraken", mode: 'copy'
 
-
     input:
     set val(name), file(report) from kraken_out
     file("taxonomy/taxonomy.tab") from file_krona_taxonomy
@@ -458,8 +522,10 @@ process krona_kraken {
     """
     ktImportTaxonomy -o ${name}.krona.html -t 3 -s 4 ${name}.kraken.out.txt -tax taxonomy
     """
-} 
+}} 
 
+
+if (params.kaiju) {
 process kaiju {
 
     tag "$name"
@@ -486,10 +552,8 @@ process kaiju {
     """
     kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
-            
     """
     }
-
 } 
 
 process krona_kaiju {
@@ -511,4 +575,5 @@ process krona_kaiju {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
-} 
+}}
+ 
