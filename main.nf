@@ -1,4 +1,15 @@
 #!/usr/bin/env nextflow
+
+//================================================================================================//
+// ToDo:                                                                                          //
+//Update README how to run the pipeline based on the reads                                        //
+
+
+
+
+
+
+
 def help() {
         log.info"""
         nextflow <nextflow options> run main.nf <options>
@@ -119,7 +130,8 @@ process renameBam {
         cp ${bam} "$new_bam".bam
         """
 
-}} 
+	}
+} 
 
 if (params.bam) {
 process BamToFastq {
@@ -138,7 +150,8 @@ process BamToFastq {
 	"""
 	samtools fastq -tn ${bam} | gzip > ${base}.fastq.gz 
 	"""
-}} 
+	}
+} 
 
 
 if (params.bam) {
@@ -193,7 +206,9 @@ process porechop {
         porechop -i $reads -o ${name}_chopped.fastq.gz --format fastq.gz $params.porechopParam
         """
        
-}}
+	}
+}
+
 
 if (params.longRead && !params.porechop) {
         ch_input_porechop
@@ -217,7 +232,7 @@ process fastp {
 	file ("*_fastp.json")
 
 	script:
-	if(params.singleEnd || params.bam){
+	if(params.singleEnd || params.bam || params.longRead){
         """
         fastp -i "${reads[0]}" -o "${name}.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
         """
@@ -254,7 +269,7 @@ process fastqc_after_trimming {
 
 }
 
-process multiqc {
+/*process multiqc {
 
 	
 	tag "$name"
@@ -270,7 +285,7 @@ process multiqc {
 	"""
 	multiqc .
 	"""
-}
+}*/
 
 /*
  * BUILD DATABASES
@@ -295,7 +310,7 @@ process retrieve_contaminants {
 process index_contaminants {
 
 	input:
-	file cont_genomes from params.contaminants
+	file cont_genomes from file(params.contaminants)
 
 	output:
 	file 'index*' into ch_index_contaminants
@@ -358,7 +373,7 @@ process bowtie2 {
 	file(index) from bowtie2_input.collect()
 
 	output:
-        set val(name), file("*_removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju)
+        set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju)
 	
 	script:
 	samfile = name+".sam"
@@ -370,21 +385,22 @@ process bowtie2 {
 
 	index_name = index.toString().tokenize(' ')[0].tokenize('.')[0]	
 	
-	if (params.pairedEnd){
+	if (params.bam || params.singleEnd | params.longRead){
         """
-        bowtie2 -x $index_name --local -1 ${reads[0]} -2 ${reads[1]} > $samfile
-	samtools view -Sb $samfile > $bamfile
-	samtools view -b -f4 $bamfile > $unmapped_bam
-	samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
+	bowtie2 -x $index_name --local -U $reads > $samfile
+        samtools view -Sb $samfile > $bamfile
+        samtools view -b -f4 $bamfile > $unmapped_bam
+        samtools sort -n $unmapped_bam -o $bam_sorted
+        bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
         """
         }else {
         """
-        bowtie2 -x $index_name --local -U $reads > $samfile
-	samtools view -Sb $samfile > $bamfile
+        bowtie2 -x $index_name --local -1 ${reads[0]} -2 ${reads[1]} > $samfile
+        samtools view -Sb $samfile > $bamfile
         samtools view -b -f4 $bamfile > $unmapped_bam
         samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bam_sorted -fq "${name}_removed.fastq"
+        bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
+
         """
         }
 
@@ -414,14 +430,13 @@ process kraken2 {
 	script:
         out = name+".kraken.out.txt"
         kreport = name+".kraken.report"
-        if (params.pairedEnd){
+        if (params.bam || params.singleEnd || params.longRead){
             """
-            kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
+            kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport ${reads[0]}
             """    
         } else {
             """
-            kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport ${reads[0]} 
-
+            kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
             """
         }
 } 
@@ -460,7 +475,7 @@ process krona_kraken {
     """
 } 
 
-process kaiju {
+/*process kaiju {
 
     tag "$name"
    
@@ -490,9 +505,9 @@ process kaiju {
     """
     }
 
-} 
+} */
 
-process krona_kaiju {
+/*process krona_kaiju {
 
     tag "$name"
 
@@ -511,4 +526,4 @@ process krona_kaiju {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
-} 
+}*/ 
