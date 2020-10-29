@@ -269,7 +269,7 @@ process fastqc_after_trimming {
 
 }
 
-/*process multiqc {
+process multiqc {
 
 	
 	tag "$name"
@@ -285,7 +285,7 @@ process fastqc_after_trimming {
 	"""
 	multiqc .
 	"""
-}*/
+}
 
 /*
  * BUILD DATABASES
@@ -477,7 +477,7 @@ process krona_kraken {
     """
 } 
 
-/*process kaiju {
+process kaiju {
 
     tag "$name"
    
@@ -507,9 +507,9 @@ process krona_kraken {
     """
     }
 
-} */
+}
 
-/*process krona_kaiju {
+process krona_kaiju {
 
     tag "$name"
 
@@ -528,7 +528,7 @@ process krona_kraken {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
-}*/
+}
 
 
 process centrifuge {
