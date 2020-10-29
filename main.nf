@@ -292,6 +292,7 @@ process fastqc_after_trimming {
  *
  */
 
+/*
 process retrieve_contaminants {
 
 	publishDir "${params.outdir}/Contaminants", mode: 'copy'
@@ -319,7 +320,7 @@ process index_contaminants {
 	"""
 	bowtie2-build $cont_genomes index
 	"""
-} 
+}*/
 
 process index_host {
 
@@ -329,7 +330,7 @@ process index_host {
 	file host_genome from params.hostReference
 
 	output:
-	file 'index*' into ch_index_host
+	file 'index*' into bowtie2_input
 
 	script:
         """
@@ -337,10 +338,11 @@ process index_host {
         """
 } 
 
+/*
 ch_index_host
 	.mix (ch_index_contaminants)
 	.set {bowtie2_input} 
-
+*/
 process krakenBuild {
 
         publishDir "${params.outdir}/databases", mode: 'copy'
@@ -373,7 +375,7 @@ process bowtie2 {
 	file(index) from bowtie2_input.collect()
 
 	output:
-        set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju)
+        set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju, ch_bowtie2_centrifuge)
 	
 	script:
 	samfile = name+".sam"
@@ -494,7 +496,7 @@ process krona_kraken {
 
     if (params.pairedEnd){
     """
-    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -j ${reads[1]} -o $out
+    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_nr_euk.fmi -i ${reads[0]} -j ${reads[1]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
     """
     } else {
@@ -526,4 +528,52 @@ process krona_kraken {
     """
     ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
     """
-}*/ 
+}*/
+
+
+process centrifuge {
+
+    tag "$name"
+
+    publishDir "${params.outdir}/centrifuge", mode: 'copy'
+    cpus 6
+    time "1h"
+    memory "70 GB"
+
+    input:
+    set val(name), file(reads) from ch_bowtie2_centrifuge     
+
+    output:
+    set val(name), file("report.txt") into centrifuge_out
+
+    script:
+    if (params.pairedEnd) {
+    centrifuge -x ${params.centrifugeDB} -p ${task.cpus} --report-file report.txt -S results.txt -1 ${reads[0]} -2 ${reads[1]} 
+    
+    }
+
+    else {
+    centrifuge -x ${params.centrifugeDB} -p ${task.cpus} --report-file report.txt -S results.txt -U ${reads}
+    }
+} 
+
+process krona_centrifuge {
+
+    tag "$name"
+
+    publishDir "${params.outdir}/krona_centrifuge", mode: 'copy'
+
+    input:
+    set val(name), file(report) from ch_centrifuge_krona
+    file("taxonomy/taxonomy.tab") from file_krona_taxonomy
+
+    output:
+    file("*")
+
+    script:
+
+    """
+    ktImportText -o ${name}.centrifuge.html ${name}.centrifuge.out.krona
+    """
+}
+
