@@ -316,7 +316,7 @@ process fastqc_after_trimming {
 	bowtie2-build $cont_genomes contaminants
 	"""
 } */
-
+/*
 process index_host {
 
 	//when: params.build
@@ -331,7 +331,14 @@ process index_host {
         """
 	bowtie2-build $host_genome human
         """
-} 
+}*/
+
+// Get prebuilt host indices
+if (!params.build) {
+        Channel
+        .fromPath("${params.hostIndex}/*.bt2")
+        .set {bowtie2_input}
+}
 
 /*process index_host_bwa {
 
@@ -467,7 +474,7 @@ process bowtie2 {
  * TAXONOMIC CLASSIFICATION
  *
  */
-
+/*
 process kraken2 {
 	
 	tag "$name"
@@ -480,7 +487,7 @@ process kraken2 {
 
 
 	output:
-        set val(name), file("*.kraken.out.txt") into kraken_out
+        set val("kraken2"), val(name), file("*.kraken.out.txt") into ch_krona
         set val(name), file("*.kraken.report") into kraken_report 
 
 
@@ -496,41 +503,7 @@ process kraken2 {
             kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
             """
         }
-} 
-
-process krona_taxonomy {
-    
-
-    output:
-    file("taxonomy/taxonomy.tab") into file_krona_taxonomy
-
-
-    script:
-    """
-    ktUpdateTaxonomy.sh taxonomy
-    """
-}
-
-process krona_kraken {
-
-    tag "$name"
-
-    publishDir "${params.outdir}/krona_kraken", mode: 'copy'
-
-
-    input:
-    set val(name), file(report) from kraken_out
-    file("taxonomy/taxonomy.tab") from file_krona_taxonomy
-
-    output:
-    file("*")
-
-    script:
-
-    """
-    ktImportTaxonomy -o ${name}.krona.html -t 3 -s 4 ${name}.kraken.out.txt -tax taxonomy
-    """
-}
+}*/ 
 
 process kaiju {
 
@@ -543,7 +516,7 @@ process kaiju {
 
     output:
     set val(name), file("*.kaiju.out") into kaiju_out
-    set val(name), file("*.kaiju.out.krona") into ch_kaiju_krona
+    set val("kaiju"), val(name), file("*.kaiju.out.krona") into ch_krona
     set val(name), file("*.kaiju_summary.tsv")    
     set val(name), file("*.kaiju_names.out")
 
@@ -570,29 +543,7 @@ process kaiju {
     }
 
 } 
-
-process krona_kaiju {
-
-    tag "$name"
-
-    publishDir "${params.outdir}/krona_kaiju", mode: 'copy'
-
-
-    input:
-    set val(name), file(report) from ch_kaiju_krona
-    file("taxonomy/taxonomy.tab") from file_krona_taxonomy
-
-    output:
-    file("*")
-
-    script:
-
-    """
-    ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
-    """
-}
-
-
+/*
 process centrifuge {
 
     tag "$name"
@@ -606,7 +557,7 @@ process centrifuge {
     set val(name), file(reads) from ch_bowtie2_centrifuge     
 
     output:
-    set val(name), file("kreport.txt") into centrifuge_out
+    set val("centrifuge"), val(name), file("kreport.txt") into ch_krona
     file("report.txt")
    
 
@@ -628,16 +579,30 @@ process centrifuge {
     #cat results.txt | cut -f 1,3 > results.krona
     """
     }
-} 
+}*/ 
 
-process krona_centrifuge {
+process krona_taxonomy {
+
+
+    output:
+    file("taxonomy/taxonomy.tab") into file_krona_taxonomy
+
+
+    script:
+    """
+    ktUpdateTaxonomy.sh taxonomy
+    """
+}
+
+process krona {
 
     tag "$name"
+    tag "$tool"
 
-    publishDir "${params.outdir}/krona_centrifuge", mode: 'copy'
+    publishDir "${params.outdir}/${tool}", mode: 'copy'
 
     input:
-    set val(name), file(report) from centrifuge_out
+    set val(tool), val(name), file(report) from ch_krona
     file("taxonomy/taxonomy.tab") from file_krona_taxonomy
 
     output:
@@ -646,6 +611,6 @@ process krona_centrifuge {
     script:
 
     """
-    ktImportTaxonomy -o ${name}.centrifuge.html -t 3 -s 4 ${report} -tax taxonomy
+    ktImportTaxonomy -o ${name}_${tool}_krona.html -t 3 -s 4 ${report} -tax taxonomy
     """
-} 
+}
