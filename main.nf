@@ -482,19 +482,23 @@ process kraken2 {
 	output:
         set val(name), file("*.kraken.out.txt") into kraken_out
         set val(name), file("*.kraken.report") into kraken_report 
-
+        set val(name), file("*.kraken.out.sort") into kaiju_merge
 
 	script:
         out = name+".kraken.out.txt"
         kreport = name+".kraken.report"
+	sorted_out = name+".kraken.out.sort"
+
         if (params.bam || params.singleEnd || params.longRead){
             """
             kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport ${reads[0]}
+	    sort -k2,2 $out > $sorted_out
             """    
         } else {
             """
             kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
-            """
+            sort -k2,2 $out > $sorted_out
+	    """
         }
 } 
 
@@ -540,32 +544,43 @@ process kaiju {
 
     input:
     set val(name), file(reads) from ch_bowtie2_kaiju
+    set val(name), file(kraken_sort) from kaiju_merge 
 
     output:
     set val(name), file("*.kaiju.out") into kaiju_out
     set val(name), file("*.kaiju.out.krona") into ch_kaiju_krona
     set val(name), file("*.kaiju_summary.tsv")    
     set val(name), file("*.kaiju_names.out")
+    set val(name), file("*.kaiju.out.sort") 
+    set val(name), file("*.combined.out")
 
     script:
     out = name+".kaiju.out"	
     krona_kaiju = name + ".kaiju.out.krona"
     summary = name+".kaiju_summary.tsv"
     taxon = name+".kaiju_names.out"
+    sorted_out = name+".kaiju.out.sort"
+    combined_out = name+".combined.out"
 
     if (params.pairedEnd){
     """
-    kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi  -i ${reads[0]} -j ${reads[1]} -o $out
+    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi  -i ${reads[0]} -j ${reads[1]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
-    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r genus -o $summary $out
+    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -e -o $summary $out
     kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
+    #sort -k2,2 $out > $sorted_out
+    #kaiju-mergeOutputs -i $sorted_out -j ${kraken_sort} -o $combined_out -v -t ${params.kaijuDB}/nodes.dmp
+    #kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $combined_out -o $krona_kaiju
     """
     } else {
     """
-    kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
-    kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
-    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r genus -o $summary $out
+    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
+    #kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
+    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -e -o $summary $out
     kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
+    #sort -k2,2 $out > $sorted_out
+    #kaiju-mergeOutputs -i $sorted_out -j ${kraken_sort} -o $combined_out -v -t ${params.kaijuDB}/nodes.dmp
+    #kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $combined_out -o $krona_kaiju
     """
     }
 
@@ -606,25 +621,28 @@ process centrifuge {
     set val(name), file(reads) from ch_bowtie2_centrifuge     
 
     output:
-    set val(name), file("kreport.txt") into centrifuge_out
-    file("report.txt")
+    set val(name), file("*.kreport.txt") into centrifuge_out
+    file("*.report.txt")
    
 
    
     script:
+    kreport = name+".kreport.txt"
+    report = name + ".report.txt"
+    
     
     if (params.bam || params.singleEnd || params.longRead) {
     """
-    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file report.txt -S results.txt -U ${reads}
-    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v  results.txt > kreport.txt
+    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file ${report} -S "${name}_results.txt" -U ${reads}
+    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v "${name}_results.txt" > ${kreport}
     #cat results.txt | cut -f 1,3 > results.krona
     """
     }
 
     else {
     """
-    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file report.txt -S results.txt -1 ${reads[0]} -2 ${reads[1]}
-    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v  results.txt > kreport.txt
+    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file report.txt -S "${name}_results.txt" -1 ${reads[0]} -2 ${reads[1]}
+    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v "${name}_results.txt" > ${kreport}
     #cat results.txt | cut -f 1,3 > results.krona
     """
     }
