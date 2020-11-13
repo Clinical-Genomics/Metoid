@@ -16,7 +16,7 @@ dependencies:
   - krona
   - bowtie2
   - bedtools
-  - kaiju=1.6.3
+  - kaiju=1.7.3
   - centrifuge
   - porechop
-  
+  - bwa  

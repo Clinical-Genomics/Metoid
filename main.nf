@@ -265,7 +265,7 @@ process fastqc_after_trimming {
 
 }
 
-/*process multiqc {
+process multiqc {
 
 	
 	tag "$name"
@@ -281,7 +281,7 @@ process fastqc_after_trimming {
 	"""
 	multiqc .
 	"""
-}*/
+}
 
 /*
  * BUILD DATABASES
@@ -316,7 +316,7 @@ process fastqc_after_trimming {
 	bowtie2-build $cont_genomes contaminants
 	"""
 } */
-/*
+
 process index_host {
 
 	//when: params.build
@@ -331,7 +331,7 @@ process index_host {
         """
 	bowtie2-build $host_genome human
         """
-}*/
+}
 
 // Get prebuilt host indices
 if (!params.build) {
@@ -451,11 +451,11 @@ process bowtie2 {
 	
 	if (params.bam || params.singleEnd || params.longRead ){
         """
-	bowtie2 -x $index_name --local -U $reads > $samfile
-	samtools view -Sb $samfile > $bamfile
+        bowtie2 -x $index_name --local -U $reads > $samfile
+        samtools view -Sb $samfile > $bamfile
         samtools view -b -f4 $bamfile > $unmapped_bam
         samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
+        bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
         """
         }else {
         """
@@ -474,10 +474,11 @@ process bowtie2 {
  * TAXONOMIC CLASSIFICATION
  *
  */
-/*
+
 process kraken2 {
 	
 	tag "$name"
+	cpus 1
 	
 	publishDir "${params.outdir}/kraken2", mode: 'copy'
 
@@ -487,7 +488,7 @@ process kraken2 {
 
 
 	output:
-        set val("kraken2"), val(name), file("*.kraken.out.txt") into ch_krona
+        set val("kraken2"), val(name), file("*.kraken.out.txt") into kraken2_krona
         set val(name), file("*.kraken.report") into kraken_report 
 
 
@@ -503,7 +504,7 @@ process kraken2 {
             kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
             """
         }
-}*/ 
+}
 
 process kaiju {
 
@@ -516,14 +517,15 @@ process kaiju {
 
     output:
     set val(name), file("*.kaiju.out") into kaiju_out
-    set val("kaiju"), val(name), file("*.kaiju.out.krona") into ch_krona
-    set val(name), file("*.kaiju_summary.tsv")    
+    set val("kaiju"), val(name), file("*.kaiju.out.krona") into kaiju_krona
+    set val(name), file("*kaiju_summary.tsv")
     set val(name), file("*.kaiju_names.out")
 
     script:
     out = name+".kaiju.out"	
     krona_kaiju = name + ".kaiju.out.krona"
     summary = name+".kaiju_summary.tsv"
+    summarySpecies = name+"species_kaiju_summary.tsv"
     taxon = name+".kaiju_names.out"
 
     if (params.pairedEnd){
@@ -531,6 +533,7 @@ process kaiju {
     kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi  -i ${reads[0]} -j ${reads[1]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
     kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r genus -o $summary $out
+    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -o $summarySpecies $out
     kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
     """
     } else {
@@ -543,21 +546,21 @@ process kaiju {
     }
 
 } 
-/*
+
 process centrifuge {
 
     tag "$name"
 
     publishDir "${params.outdir}/centrifuge", mode: 'copy'
-    cpus 4
+    //cpus 4cpus 4
     time "1h"
-    memory "20 GB"
+    //memory "20 GB"
 
     input:
     set val(name), file(reads) from ch_bowtie2_centrifuge     
 
     output:
-    set val("centrifuge"), val(name), file("kreport.txt") into ch_krona
+    set val("centrifuge"), val(name), file("kreport.txt") into centrifuge_krona
     file("report.txt")
    
 
@@ -566,23 +569,26 @@ process centrifuge {
     
     if (params.bam || params.singleEnd || params.longRead) {
     """
-    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file report.txt -S results.txt -U ${reads}
-    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v  results.txt > kreport.txt
+    centrifuge -x ${params.centrifugeDB}/p_compressed+h+v -p ${task.cpus} --report-file report.txt -S results.txt -U ${reads}
+    centrifuge-kreport -x  ${params.centrifugeDB}/p_compressed+h+v  results.txt > kreport.txt
     #cat results.txt | cut -f 1,3 > results.krona
     """
     }
 
     else {
     """
-    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file report.txt -S results.txt -1 ${reads[0]} -2 ${reads[1]}
-    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v  results.txt > kreport.txt
+    centrifuge -x ${params.centrifugeDB}/p_compressed+h+v -p ${task.cpus} --report-file report.txt -S results.txt -1 ${reads[0]} -2 ${reads[1]}
+    centrifuge-kreport -x  ${params.centrifugeDB}/p_compressed+h+v  results.txt > kreport.txt
     #cat results.txt | cut -f 1,3 > results.krona
     """
     }
-}*/ 
+}
+
+kraken2_krona
+    .mix(kaiju_krona, centrifuge_krona)
+    .set { ch_krona }
 
 process krona_taxonomy {
-
 
     output:
     file("taxonomy/taxonomy.tab") into file_krona_taxonomy
