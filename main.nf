@@ -511,8 +511,8 @@ process kaiju {
 
     tag "$name"
     cpus 6
-    time "1h"
-    memory "70 GB"
+    time "2h"
+    memory "130 GB"
     publishDir "${params.outdir}/kaiju", mode: 'copy'
     database = Channel.fromPath("${params.kaijuDB}/*.fmi")
 
@@ -535,7 +535,7 @@ process kaiju {
 
     if (params.pairedEnd){
     """
-    kaiju -t ${params.kaijuDB}/nodes.dmp -f $fmi  -i ${reads[0]} -j ${reads[1]} -o $out
+    kaiju -z ${task.cpus} -t ${params.kaijuDB}/nodes.dmp -f $fmi  -i ${reads[0]} -j ${reads[1]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
     kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r genus -o $summary $out
     kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -o $summarySpecies $out
@@ -543,7 +543,7 @@ process kaiju {
     """
     } else {
     """
-    kaiju -t ${params.kaijuDB}/nodes.dmp -f $fmi -i ${reads[0]} -o $out
+    kaiju -z ${task.cpus} -t ${params.kaijuDB}/nodes.dmp -f $fmi -i ${reads[0]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
     kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r genus -o $summary $out
     kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
