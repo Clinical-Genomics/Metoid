@@ -1,4 +1,5 @@
 """Filters results from taxonomic classifiers and extracts taxonomic IDs for filtered hits"""
+"""To do: Add argparse and logging"""
 import os
 import sys
 import subprocess
@@ -45,6 +46,10 @@ def main():
     print("min_ratio", min_ratio)
     print("min_reads_ratio", min_reads_ratio)
 
+    # Output
+    summary_filtered = "{}_filtered_taxonomic_hits.tsv".format(classifier)
+    summary_skipped = "{}_skipped_taxonomic_hits.tsv".format(classifier)
+
     # Parse hits
     all_hits = get_all_hits(hits_report, classifier)
     if ntc:
@@ -71,29 +76,35 @@ def main():
         else:
             if reads > min_reads:
                 add_taxid(all_hits, taxid, filtered_hits, skipped_hits)
-    a = sorted(list(filtered_hits.items()), key=lambda k: k[1][0], reverse=True)
+    sorted_hits = sorted(list(filtered_hits.items()), key=lambda k: k[1][0], reverse=True)
     print("Found {} species in the sample".format(len(filtered_hits)))
-    
+
     # Download refseq assembly summary file from ncbi
     print("Downloading NCBI refseq reference summary file")
-    #download_ftp(reference_summary_refseq)
-
+    download_ftp(reference_summary_refseq)
 
     # Get reference ids for filtered taxids
     taxid_accesion_map = {}
     # Search refseq for references
-    missing_acc_refseq = parse_accession(reference_summary_refseq, filtered_hits, taxid_accesion_map)
+    missing_acc_refseq = parse_accession(reference_summary_refseq, filtered_hits.keys(), taxid_accesion_map)
     if len(missing_acc_refseq) > 0:
         # Download genbank assembly summary file from ncbi
         print("Downloading NCBI genbank reference summary file")
-        #download_ftp(reference_summary_genbank)
+        download_ftp(reference_summary_genbank)
         # Search genbank for references that are not found in refseq
         missing_acc = parse_accession(reference_summary_genbank, missing_acc_refseq, taxid_accesion_map)
         if len(missing_acc) > 0:
             print("Failed to identify accession number of reference for taxons: {}".format(", ".join(missing_acc)))
 
-    for k, v in taxid_accesion_map.items():
-        print(k, v)
+    # Create summary files
+    with open(summary_filtered, "w") as out:
+        out.write("taxonomic_id\treads\tspecies\taccession_id\n")
+        for taxid, info in sorted_hits:
+            out.write("\t".join([taxid, info[0], info[1], taxid_accesion_map[str(taxid)]]) + "\n")
+    with open(summary_skipped, "w") as out:
+        out.write("taxonomic_id\tspecies\n")
+        for taxid, name in skipped_hits.items():
+            out.write(str(taxid) + "\t" + name + "\n")
 
 def get_all_hits(results, classifier):
     """Parse all hits in classifier report for species level"""
@@ -107,15 +118,12 @@ def get_all_hits(results, classifier):
             elif classifier in ["kraken2", "centrifuge"]:
                 reads = hit[1]
                 level = hit[3]
-                #if level == "G":
-                #    print('\t'.join(hit))
                 name = hit[5].strip().rstrip()
                 if level == "S":
                     taxid = hit[4]
                     all_hits[taxid] = [reads, name]
                 elif level.startswith("S") or level == "-":
                     all_hits[taxid].append([reads, name, hit[4]])
-
             else:
                 print("No classifier specified. Supported classifiers are kraken2, centrifuge and kaiju.")
                 sys.exit(1)
@@ -136,13 +144,13 @@ def add_taxid(all_hits, taxid, output, skipped):
             if int(sub[0])/reads > 0.75:
                 taxid = sub[2]
                 data = sub
+    name = data[1]
     # Filter out unwanted species
-    if "phage" in data[1].lower():
-        skipped[taxid] = data[1]
+    if "phage" in name.lower() or taxid == "9606":
+        skipped[taxid] = name
         return
     #elif contaminant
-    output[taxid] = [int(data[0]), data[1]]
-
+    output[taxid] = [data[0], name]
 
 def download_ftp(path):
     """Download file"""
@@ -156,12 +164,12 @@ def download_ftp(path):
         print("Could not download file: {}\n".format(path) + e)
         sys.exit(1)
 
-def parse_accession(referencefile, filtered_hits, taxid_accesion_map):
+def parse_accession(referencefile, taxids, taxid_accesion_map):
     """Parses NCBI summary file and chooses one reference accession number for each species in input list, returns list of missing taxons"""
     missing_acc = []
     with open(os.path.basename(referencefile), "r") as f:
         references = pd.read_csv(f, sep='\t', skiprows=1, index_col=0, dtype=str)
-        for taxid in filtered_hits:
+        for taxid in taxids:
             refs = references.copy()
             refs = refs.loc[refs["taxid"] == taxid]
             if len(refs) == 1:
