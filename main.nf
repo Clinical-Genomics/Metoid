@@ -332,13 +332,13 @@ process index_host {
 	bowtie2-build $host_genome human
         """
 }
-
+/*
 // Get prebuilt host indices
 if (!params.build) {
         Channel
         .fromPath("${params.hostIndex}/*.bt2")
         .set {bowtie2_input}
-}
+}*/
 
 /*process index_host_bwa {
 
@@ -478,8 +478,9 @@ process bowtie2 {
 process kraken2 {
 	
 	tag "$name"
-	cpus 1
-	
+        cpus 6
+        time "1h"
+        memory "70 GB"
 	publishDir "${params.outdir}/kraken2", mode: 'copy'
 
 
@@ -509,11 +510,15 @@ process kraken2 {
 process kaiju {
 
     tag "$name"
-   
+    cpus 6
+    time "1h"
+    memory "70 GB"
     publishDir "${params.outdir}/kaiju", mode: 'copy'
+    database = Channel.fromPath("${params.kaijuDB}/*.fmi")
 
     input:
     set val(name), file(reads) from ch_bowtie2_kaiju
+    path fmi from database
 
     output:
     set val(name), file("*.kaiju.out") into kaiju_out
@@ -530,7 +535,7 @@ process kaiju {
 
     if (params.pairedEnd){
     """
-    kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi  -i ${reads[0]} -j ${reads[1]} -o $out
+    kaiju -t ${params.kaijuDB}/nodes.dmp -f $fmi  -i ${reads[0]} -j ${reads[1]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
     kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r genus -o $summary $out
     kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -o $summarySpecies $out
@@ -538,7 +543,7 @@ process kaiju {
     """
     } else {
     """
-    kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
+    kaiju -t ${params.kaijuDB}/nodes.dmp -f $fmi -i ${reads[0]} -o $out
     kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
     kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r genus -o $summary $out
     kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
@@ -550,11 +555,10 @@ process kaiju {
 process centrifuge {
 
     tag "$name"
-
-    publishDir "${params.outdir}/centrifuge", mode: 'copy'
-    //cpus 4cpus 4
+    cpus 6
     time "1h"
-    //memory "20 GB"
+    memory "70 GB"
+    publishDir "${params.outdir}/centrifuge", mode: 'copy'
 
     input:
     set val(name), file(reads) from ch_bowtie2_centrifuge     
@@ -562,8 +566,6 @@ process centrifuge {
     output:
     set val("centrifuge"), val(name), file("kreport.txt") into centrifuge_krona
     file("report.txt")
-   
-
    
     script:
     
@@ -602,8 +604,7 @@ process krona_taxonomy {
 
 process krona {
 
-    tag "$name"
-    tag "$tool"
+    tag "${name}_${tool}"
 
     publishDir "${params.outdir}/${tool}", mode: 'copy'
 
