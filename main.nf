@@ -4,7 +4,8 @@
 // ToDo:                                                                                          //
 //Update README how to run the pipeline based on the reads                                        //
 //Do not build the index of contaminants and host sequence every times the pipeline is run        //
-
+//use when clause                                                                                 //
+//Bacteria and virus for DNA, only virus for RNA                                                  //
 
 def help() {
         log.info"""
@@ -34,7 +35,6 @@ def help() {
                   "nextflow.config" in current directory
                   "nextflow.config" in script directory
                   "~/.nextflow/config"
-
         Specify config file with nextflow options:        
         -c        Path to additional config file
         -C        Path to config file. Other config files are ignored.
@@ -149,13 +149,23 @@ process BamToFastq {
 	}
 } 
 
+def getCommonName( file ) {
+  file.tokenize('_')[0]
+        
+}
 
 if (params.bam) {
 	ch_output_bamtofastq
-        .view()
-	.into {ch_input_fastqc; ch_input_fastp} 
+         /*.map { prefix, file1 -> tuple(getCommonName(prefix), file1)}*/
+       /* .map { prefix,file -> tuple(getCommonName(prefix), file) } */
+        /* .map{ it -> tuple(it.baseName.tokenize("_")[0], it)}*/
+       /* .groupTuple()*/
+	/*.view()*/
+        .into {ch_input_fastqc; ch_input_fastp} 
 
 } 
+
+
 
 
 /*
@@ -208,7 +218,6 @@ process porechop {
 
 if (params.longRead && !params.porechop) {
         ch_input_porechop
-        .view()
         .into {ch_input_fastp}
 }
 
@@ -242,7 +251,6 @@ process fastp {
 
 if (!params.fastp) {
         ch_input_fastp
-        .view()
         .into {trimmed_reads_bowtie2; trimmed_reads_fastqc}
 }
 
@@ -256,7 +264,6 @@ process fastqc_after_trimming {
 
         output:
         file "*_fastqc.{zip,html}" into fastqc_after_trimming
-
 
         script:
         """
@@ -289,35 +296,27 @@ process fastqc_after_trimming {
  */
 
 /*process retrieve_contaminants {
-
 	publishDir "${params.outdir}/Contaminants", mode: 'copy'
-
 	when: params.build
-
         script:
-
         """
         mkdir -p ${params.outdir}/Contaminants
         RetrieveContaminants.py ${params.outdir}/Contaminants ${params.contaminantList} 
 	"""
-
 } */
 
 /*process index_contaminants {
-
 	input:
 	file cont_genomes from file(params.contaminants)
-
 	output:
 	file 'contaminants*' into ch_index_contaminants
-
 	script:
 	"""
 	bowtie2-build $cont_genomes contaminants
 	"""
 } */
 
-process index_host {
+/*process index_host {
 
 	//when: params.build
 
@@ -331,21 +330,25 @@ process index_host {
         """
 	bowtie2-build $host_genome human
         """
-} 
+}*/
+/*
+// Get prebuilt host indices
+if (!params.build) {
+        Channel
+        .fromPath("${params.hostIndex}/*.bt2")
+        .set {bowtie2_input}
+}*/
 
-/*process index_host_bwa {
-
+process index_host_bwa {
 	input:
 	file host_genome from file(params.hostReference)
-
 	output:
 	file '*' into bwa_input
-
 	script:
 	"""
 	bwa index $host_genome 
 	"""
-}*/
+}
 
 /*ch_index_host
 	.mix (ch_index_contaminants)
@@ -363,7 +366,6 @@ process krakenBuild {
         """
         mkdir -p ${params.outdir}/databases
         UpdateKrakenDatabases.py ${params.outdir}/databases
-
         """
 }
 
@@ -374,20 +376,20 @@ process krakenBuild {
  */
 
 
-/*process bwa {
+process bwa {
        
 	tag "$name"
+	
 	publishDir "${params.outdir}/bwa", mode: 'copy'
-
+	
 	input:
 	set val(name), file(reads) from trimmed_reads_bwa
 	file(index) from bwa_input.collect()
 	file host_genome from file(params.hostReference)
-
-
+	
 	output:
 	set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
-
+	
 	script:
 	samfile = name+".sam"
 	bamfile = name+"_mapped_and_unmapped.bam"
@@ -395,39 +397,37 @@ process krakenBuild {
 	mapped_bam = name+"_mapped.bam"
 	bam_sorted = name+"_sorted.bam"
 	bam_mapped_sorted = name+"_mapped_sorted.bam"
-
 	index_name = index.toString().tokenize(' ')[0].tokenize('.')[0]
-
+	
 	if (params.bam || params.singleEnd || params.longRead){
       	"""
 	bwa mem ${host_genome} ${reads} -t 4 > $samfile
 	samtools view -Sb $samfile > $bamfile
-	samtools view -b -f4 $bamfile > $unmapped_bam
-	samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bamfile -fq "${name}.removed.fastq"
+        samtools view -b -f4 $bamfile > $unmapped_bam
+        samtools sort -n $unmapped_bam -o $bam_sorted
+	bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
 	"""
 	}
 	else {
 	"""
 	bwa mem ${host_genome} ${reads[0]} ${reads[1]} -t 4 > $samfile
 	samtools view -Sb $samfile > $bamfile
-	samtools view -b -f4 $bamfile > $unmapped_bam
-	samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
+        samtools view -b -f4 $bamfile > $unmapped_bam
+        samtools sort -n $unmapped_bam -o $bam_sorted
+        bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
 	"""
       }
+}
 
-}*/
 
-
-process bowtie2 {
+/*process bowtie2 {
 	
 	tag "$name"
 	publishDir "${params.outdir}/bowtie2", mode: 'copy'
 
 	input:
 	set val(name), file(reads) from trimmed_reads_bowtie2
-	file(index) from bowtie2_input.collect().view()
+	file(index) from bowtie2_input.collect()
 
 	output:
         set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
@@ -444,11 +444,11 @@ process bowtie2 {
 	
 	if (params.bam || params.singleEnd || params.longRead ){
         """
-	bowtie2 -x $index_name --local -U $reads > $samfile
-	samtools view -Sb $samfile > $bamfile
+        bowtie2 -x $index_name --local -U $reads > $samfile
+        samtools view -Sb $samfile > $bamfile
         samtools view -b -f4 $bamfile > $unmapped_bam
         samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
+        bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
         """
         }else {
         """
@@ -457,11 +457,10 @@ process bowtie2 {
         samtools view -b -f4 $bamfile > $unmapped_bam
         samtools sort -n $unmapped_bam -o $bam_sorted
         bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
-
         """
         }
 
-}
+}*/
 
 /*
  * TAXONOMIC CLASSIFICATION
@@ -471,7 +470,6 @@ process bowtie2 {
 process kraken2 {
 	
 	tag "$name"
-	
 	publishDir "${params.outdir}/kraken2", mode: 'copy'
 
 
@@ -480,30 +478,109 @@ process kraken2 {
 
 
 	output:
-        set val(name), file("*.kraken.out.txt") into kraken_out
-        set val(name), file("*.kraken.report") into kraken_report 
-        set val(name), file("*.kraken.out.sort") into kaiju_merge
+        set val("kraken2"), val(name), file("*.kraken.out.txt") into kraken2_krona
+        set val("kraken2"), val(name), file("*.kraken.report") into kraken_report 
+
 
 	script:
         out = name+".kraken.out.txt"
         kreport = name+".kraken.report"
-	sorted_out = name+".kraken.out.sort"
-
         if (params.bam || params.singleEnd || params.longRead){
             """
             kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport ${reads[0]}
-	    sort -k2,2 $out > $sorted_out
             """    
         } else {
             """
             kraken2 --db ${params.krakenDB} --threads ${task.cpus} --output $out --report $kreport --paired ${reads[0]} ${reads[1]}
-            sort -k2,2 $out > $sorted_out
-	    """
+            """
         }
+}
+
+process kaiju {
+
+   tag "$name"
+   
+    publishDir "${params.outdir}/kaiju", mode: 'copy'
+
+
+    input:
+    set val(name), file(reads) from ch_bowtie2_kaiju
+   
+    output:
+    set val("kaiju"), val(name), file("*.kaiju.out") into kaiju_out
+    set val("kaiju"), val(name), file("*.kaiju.out.krona") into kaiju_krona
+    set val("kaiju"), val(name), file("*.kaiju_summary.tsv") into kaiju_summary   
+    set val(name), file("*.kaiju_names.out")
+   
+    script:
+    out = name+".kaiju.out"	
+    krona_kaiju = name + ".kaiju.out.krona"
+    summary = name+".kaiju_summary.tsv"
+    taxon = name+".kaiju_names.out"
+
+
+    if (params.pairedEnd){
+    """
+    kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -j ${reads[1]} -o $out
+    kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
+    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -o $summary $out
+    kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
+    """
+    } else {
+    """
+    kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
+    kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
+    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -o $summary $out
+    kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
+    """
+    }
+   
+
 } 
 
-process krona_taxonomy {
+process centrifuge {
+
+    tag "$name"
+    cpus 4
     
+    publishDir "${params.outdir}/centrifuge", mode: 'copy'
+
+    input:
+    set val(name), file(reads) from ch_bowtie2_centrifuge     
+
+    output:
+    set val("centrifuge"), val(name), file("*.kreport.txt") into centrifuge_out
+    set val("centrifuge"), val(name), file("*.results.txt") into centrifuge_krona
+    file("*.report.txt")
+   
+    script:
+    kreport = name+".kreport.txt"
+    report = name + ".report.txt"
+    results = name + ".results.txt"    
+
+    if (params.bam || params.singleEnd || params.longRead) {
+    """
+    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file $report -S $results -U ${reads}
+    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v $results > $kreport
+    #cat results.txt | cut -f 1,3 > results.krona
+    """
+    }
+
+    else {
+    """
+    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file $report -S $results -1 ${reads[0]} -2 ${reads[1]}
+    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v $results > $kreport
+    #cat results.txt | cut -f 1,3 > results.krona
+    """
+    }
+}
+
+/*kraken2_krona*/
+   /* .mix(kaiju_out, centrifuge_krona) */
+kraken2_krona
+    .set { ch_krona }
+
+process krona_taxonomy {
 
     output:
     file("taxonomy/taxonomy.tab") into file_krona_taxonomy
@@ -515,155 +592,106 @@ process krona_taxonomy {
     """
 }
 
-process krona_kraken {
+process krona {
 
-    tag "$name"
+    tag "${name}_${tool}"
 
-    publishDir "${params.outdir}/krona_kraken", mode: 'copy'
-
+    publishDir "${params.outdir}/${tool}", mode: 'copy'
 
     input:
-    set val(name), file(report) from kraken_out
+    set val(tool), val(name), file(report) from ch_krona
     file("taxonomy/taxonomy.tab") from file_krona_taxonomy
 
     output:
-    file("*")
+    file("*") 
 
     script:
 
     """
-    ktImportTaxonomy -o ${name}.krona.html -t 3 -s 4 ${name}.kraken.out.txt -tax taxonomy
+    ktImportTaxonomy -o ${name}_${tool}_krona.html -t 3 -s 4 ${report} -tax taxonomy
     """
 }
+     
+/*kraken_report
+    .mix(kaiju_summary,centrifuge_out)
+    .set{ ch_parser }*/
 
-process kaiju {
+if (params.bam) {
+	kraken_report
+		.concat(kaiju_summary,centrifuge_out)
+                .map { classifier,file1,file2 -> tuple(getCommonName(file1),classifier,file1,file2) } 
+               // .map { it -> tuple(it[0],it[2])}
+	        .groupTuple()
+		.transpose()
+	       // .map { it -> tuple(it[0],it[1],it[2])}
+		.view()
+                .set {parser_control}
 
-    tag "$name"
-   
-    publishDir "${params.outdir}/kaiju", mode: 'copy'
-
-    input:
-    set val(name), file(reads) from ch_bowtie2_kaiju
-    set val(name), file(kraken_sort) from kaiju_merge 
-
-    output:
-    set val(name), file("*.kaiju.out") into kaiju_out
-    set val(name), file("*.kaiju.out.krona") into ch_kaiju_krona
-    set val(name), file("*.kaiju_summary.tsv")    
-    set val(name), file("*.kaiju_names.out")
-    set val(name), file("*.kaiju.out.sort") 
-    set val(name), file("*.combined.out")
-
-    script:
-    out = name+".kaiju.out"	
-    krona_kaiju = name + ".kaiju.out.krona"
-    summary = name+".kaiju_summary.tsv"
-    taxon = name+".kaiju_names.out"
-    sorted_out = name+".kaiju.out.sort"
-    combined_out = name+".combined.out"
-
-    if (params.pairedEnd){
-    """
-    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi  -i ${reads[0]} -j ${reads[1]} -o $out
-    kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
-    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -e -o $summary $out
-    kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
-    #sort -k2,2 $out > $sorted_out
-    #kaiju-mergeOutputs -i $sorted_out -j ${kraken_sort} -o $combined_out -v -t ${params.kaijuDB}/nodes.dmp
-    #kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $combined_out -o $krona_kaiju
-    """
-    } else {
-    """
-    kaiju -x -v -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
-    #kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
-    kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -e -o $summary $out
-    kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
-    #sort -k2,2 $out > $sorted_out
-    #kaiju-mergeOutputs -i $sorted_out -j ${kraken_sort} -o $combined_out -v -t ${params.kaijuDB}/nodes.dmp
-    #kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $combined_out -o $krona_kaiju
-    """
-    }
-
-} 
-
-process krona_kaiju {
-
-    tag "$name"
-
-    publishDir "${params.outdir}/krona_kaiju", mode: 'copy'
+     parser_control
+      .branch { 
+       control: it =~ /_NK/
+       sample: it !=~ /_NK/
+     }
+    .set { ch_parser_control }
 
 
-    input:
-    set val(name), file(report) from ch_kaiju_krona
-    file("taxonomy/taxonomy.tab") from file_krona_taxonomy
-
-    output:
-    file("*")
-
-    script:
-
-    """
-    ktImportText -o ${name}.kaiju.html ${name}.kaiju.out.krona
-    """
+ch_parser_control.sample.set {parser_sample}
+ch_parser_control.control.set {parser_control}
 }
 
-
-process centrifuge {
-
-    tag "$name"
-
-    publishDir "${params.outdir}/centrifuge", mode: 'copy'
-    cpus 4
-    time "1h"
-    memory "20 GB"
-
-    input:
-    set val(name), file(reads) from ch_bowtie2_centrifuge     
-
-    output:
-    set val(name), file("*.kreport.txt") into centrifuge_out
-    file("*.report.txt")
+else {
    
+    kraken_report
+             .concat(kaiju_summary,centrifuge_out)
+             .set {ch_parser}
 
-   
-    script:
-    kreport = name+".kreport.txt"
-    report = name + ".report.txt"
-    
-    
-    if (params.bam || params.singleEnd || params.longRead) {
-    """
-    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file ${report} -S "${name}_results.txt" -U ${reads}
-    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v "${name}_results.txt" > ${kreport}
-    #cat results.txt | cut -f 1,3 > results.krona
-    """
-    }
+}
 
-    else {
-    """
-    centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file report.txt -S "${name}_results.txt" -1 ${reads[0]} -2 ${reads[1]}
-    centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v "${name}_results.txt" > ${kreport}
-    #cat results.txt | cut -f 1,3 > results.krona
-    """
-    }
-} 
+if (!params.bam) {
+process parse_classifier {
+	
+	publishDir "${params.outdir}/filtering", mode: 'copy'
 
-process krona_centrifuge {
+		
+	tag "${name}_${tool}"
 
-    tag "$name"
+	input:
+	set val(tool), val(name), file(report) from ch_parser
+	
+	output:
+	set val(tool), val(name), file("*_results.txt") 
+        file("*filtered_taxonomic_hits.tsv")		
+	
+	script:
+        """
+        extractReferences.py ${tool} 100 ${report} > ${tool}_${name}_results.txt 
+        """
+      
+	}
+}
 
-    publishDir "${params.outdir}/krona_centrifuge", mode: 'copy'
+if (params.bam) {
 
-    input:
-    set val(name), file(report) from centrifuge_out
-    file("taxonomy/taxonomy.tab") from file_krona_taxonomy
+process parse_classifier_control {
 
-    output:
-    file("*")
+	publishDir "${params.outdir}/filtering", mode: 'copy'
 
-    script:
+	tag "${name}"
+	tag "${tool}"
+	
+	input:
+        set val(prefix),val(tool),val(name), file(report_sample) from parser_sample
+        set val(prefix),val(tool),val(name), file(report_control) from parser_control
+	
+	output:
+	set val(tool),val(name), file("*_results.txt") 
+	file("*filtered_taxonomic_hits.tsv")
+	
+	script:
+	"""
+	extractReferences.py ${tool} 100,20,0.05,20 ${report_sample} ${report_control} > ${tool}_${prefix}_results.txt
+	"""
 
-    """
-    ktImportTaxonomy -o ${name}.centrifuge.html -t 3 -s 4 ${report} -tax taxonomy
-    """
+
+	}
 } 
