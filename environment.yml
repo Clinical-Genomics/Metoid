@@ -14,7 +14,7 @@ dependencies:
   - biopython
   - kraken2
   - krona
-  - bowtie2
+  - bwa
   - bedtools
   - kaiju=1.7.3
   - centrifuge
