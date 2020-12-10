@@ -156,17 +156,9 @@ def getCommonName( file ) {
 
 if (params.bam) {
 	ch_output_bamtofastq
-         /*.map { prefix, file1 -> tuple(getCommonName(prefix), file1)}*/
-       /* .map { prefix,file -> tuple(getCommonName(prefix), file) } */
-        /* .map{ it -> tuple(it.baseName.tokenize("_")[0], it)}*/
-       /* .groupTuple()*/
-	/*.view()*/
         .into {ch_input_fastqc; ch_input_fastp} 
 
 } 
-
-
-
 
 /*
  * QC- fastqc
@@ -575,9 +567,8 @@ process centrifuge {
     }
 }
 
-/*kraken2_krona*/
-   /* .mix(kaiju_out, centrifuge_krona) */
 kraken2_krona
+    .mix(kaiju_out, centrifuge_krona)
     .set { ch_krona }
 
 process krona_taxonomy {
