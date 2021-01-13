@@ -19,4 +19,4 @@ dependencies:
   - kaiju=1.7.3
   - centrifuge
   - porechop
-  
+  - minimap2  

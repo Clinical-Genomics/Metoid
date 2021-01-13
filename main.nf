@@ -216,7 +216,7 @@ if (params.longReads && !params.bam) {
 
 
 			output:
-			set val(name), file("*_chopped.fastq.gz") into ch_input_fastp
+			set val(name), file("*_chopped.fastq.gz") into trimmed_reads_minimap2
 
 			script:
 			"""
@@ -229,7 +229,7 @@ if (params.longReads && !params.bam) {
 
 if (params.longReads && !params.porechop) {
 	ch_input_porechop
-		.into {ch_input_fastp}
+		.into {trimmed_reads_minimap2}
 }
 
 process fastp {
@@ -248,7 +248,7 @@ process fastp {
 		file ("*_fastp.json")
 
 		script:
-		if(params.singleEnd || params.bam || params.longReads){
+		if(params.singleEnd || params.bam ){
 			"""
 				fastp -i "${reads[0]}" -o "${name}.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
 				"""
@@ -475,6 +475,37 @@ bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2
 
 }*/
 
+process minimap2 {
+	
+        cpus 4
+        time "3h"
+        tag "$name"      
+        
+	publishDir "${params.outdir}/minimap2", mode: 'copy'
+	
+        input:
+        set val(name), file(reads) from trimmed_reads_minimap2
+        file host_genome from file(params.hostReference)
+
+	output:
+	file "*.bam*"
+        set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju, ch_bowtie2_centrifuge)
+
+	script:
+        samfile = name+".sam"
+        bamfile = name+"_mapped_and_unmapped.bam"
+        unmapped_bam = name+ "_only_unmapped.bam"
+        unmapped_sorted_bam = name+"unmapped_sorted.bam"
+
+        """
+        minimap2 -ax map-ont -t $task.cpus -a $host_genome $reads > $samfile
+        samtools view -bh $samfile > $bamfile
+        samtools view -bh -f4 $bamfile > $unmapped_bam
+        samtools sort -n $unmapped_bam -o $unmapped_sorted_bam
+        bedtools bamtofastq -i $unmapped_sorted_bam -fq "${name}.removed.fastq" 
+        """
+}
+
 /*
  * TAXONOMIC CLASSIFICATION
  *
@@ -521,7 +552,6 @@ process kaiju {
 
 	output:
 	set val("kaiju"), val(name), file("*.kaiju.out") into kaiju_out
-	set val("kaiju"), val(name), file("*.kaiju.out.krona") into kaiju_krona
 	set val("kaiju"), val(name), file("*.kaiju_summary.tsv") into kaiju_summary   
 	set val(name), file("*.kaiju_names.out")
 
