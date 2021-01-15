@@ -325,9 +325,10 @@ bowtie2-build $cont_genomes contaminants
 
 /*
 if (!params.longReads) {
-process index_host {
+process index_host_bowtie2 {
 
-//when: params.build
+when:
+params.mapper == "bowtie2"
 
 input:
 file host_genome from file(params.hostReference)
@@ -350,6 +351,9 @@ Channel
 
 if (!params.longReads) {
 process index_host_bwa {
+
+        when:
+        params.mapper == "bwa"
 	
 	input:
 	file host_genome from file(params.hostReference)
@@ -395,6 +399,9 @@ process bwa {
 
 	publishDir "${params.outdir}/bwa", mode: 'copy'
 
+        when:
+        params.mapper == "bwa"
+
 	input:
 	set val(name), file(reads) from trimmed_reads_bwa
 	file(index) from bwa_input.collect()
@@ -430,13 +437,16 @@ process bwa {
 	bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
 	"""
 	}
-}} 
+}}
 
 /*if (!params.longReads) {
 process bowtie2 {
 
   tag "$name"
   publishDir "${params.outdir}/bowtie2", mode: 'copy'
+
+  when:
+  params.mapper == "bowtie2"
 
 input:
 set val(name), file(reads) from trimmed_reads_bowtie2
@@ -473,7 +483,7 @@ bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2
 """
 }
 
-}}*/
+}}
 
 if (params.longReads) {
 process minimap2 {
