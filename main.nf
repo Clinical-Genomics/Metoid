@@ -87,7 +87,6 @@ else if (params.longReads){
         .filter { it =~/.*.fastq.gz|.*.fq.gz|.*.fastq|.*.fq/ }
         .ifEmpty { exit 1, "Cannot find any reads matching: ${params.reads}\nValid input file types: '.fastq.gz', '.fq.gz', '.fastq', or '.fq'" }
         .into{ch_input_fastqc;ch_input_porechop}
-        params.fastpParam = params.fastpParamLong 
 }
 else {
         Channel
@@ -205,33 +204,31 @@ process fastqc {
 }
 
 if (params.longReads && !params.bam) {
-	process porechop {
+process porechop {
 
-		publishDir  "${params.outdir}/Porechop", mode: 'copy'
+    publishDir  "${params.outdir}/Porechop", mode: 'copy'
 
-			when: params.porechop        
+    when: params.porechop        
 
-			input:
-			set val(name), file(reads) from ch_input_porechop
+    input:
+    set val(name), file(reads) from ch_input_porechop
 
+    output:
+    set val(name), file("*_chopped.fastq.gz") into (trimmed_reads_minimap2, trimmed_reads_fastqc)
 
-			output:
-			set val(name), file("*_chopped.fastq.gz") into trimmed_reads_minimap2
-
-			script:
-			"""
-			porechop -i $reads -o ${name}_chopped.fastq.gz --format fastq.gz $params.porechopParam
-			"""
-
-	}
-} 
-
+    script:
+    """
+    porechop -i $reads -o ${name}_chopped.fastq.gz --format fastq.gz -t 4 $params.porechopParam
+    """
+    }
+}
 
 if (params.longReads && !params.porechop) {
 	ch_input_porechop
 		.into {trimmed_reads_minimap2}
 }
 
+if (!params.longReads) {
 process fastp {
 
 	tag "$name"
@@ -240,7 +237,7 @@ process fastp {
 		when: params.fastp
 
 		input:
-		set val(name), file(reads) from ch_input_fastp
+                set val(name), file(reads) from ch_input_fastp
 
 		output:
 		set val(name), file("*.trimmed.fastq.gz") into (trimmed_reads_bowtie2, trimmed_reads_fastqc,trimmed_reads_bwa)	
@@ -258,7 +255,7 @@ process fastp {
 				fastp -i "${reads[0]}" -I "${reads[1]}" -o "${name}_1.trimmed.fastq.gz" -O "${name}_2.trimmed.fastq.gz" -j "${name}_fastp.json" -h "${name}.html" $params.fastpParam 
 				"""
 		} 
-}
+}}
 
 if (!params.fastp) {
 	ch_input_fastp
@@ -326,7 +323,9 @@ bowtie2-build $cont_genomes contaminants
 """
 } */
 
-/*process index_host {
+/*
+if (!params.longReads) {
+process index_host {
 
 //when: params.build
 
@@ -340,7 +339,7 @@ script:
 """
 bowtie2-build $host_genome human
 """
-}*/
+}}*/
 /*
 // Get prebuilt host indices
 if (!params.build) {
@@ -349,6 +348,7 @@ Channel
 .set {bowtie2_input}
 }*/
 
+if (!params.longReads) {
 process index_host_bwa {
 	
 	input:
@@ -361,7 +361,7 @@ process index_host_bwa {
 	"""
 	bwa index $host_genome 
 """
-}
+}}
 
 //Exclude this part
 /*ch_index_host
@@ -388,7 +388,7 @@ process krakenBuild {
  *
  */
 
-
+if (!params.longReads) {
 process bwa {
 
 	tag "$name"
@@ -401,24 +401,24 @@ process bwa {
 	file host_genome from file(params.hostReference)
 
 	output:
-	set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
+	set val(name), file("*_unmapped.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
 
 	script:
-	samfile = name+".sam"
-	bamfile = name+"_mapped_and_unmapped.bam"
-	unmapped_bam = name+ "_only_unmapped.bam"
-	mapped_bam = name+"_mapped.bam"
-	bam_sorted = name+"_sorted.bam"
-	bam_mapped_sorted = name+"_mapped_sorted.bam"
+	samfile = name + ".sam"
+	bamfile = name + "_mapped_and_unmapped.bam"
+	unmapped_bam = name + "_only_unmapped.bam"
+	mapped_bam = name + "_mapped.bam"
+	bam_sorted = name + "_sorted.bam"
+	bam_mapped_sorted = name + "_mapped_sorted.bam"
 	index_name = index.toString().tokenize(' ')[0].tokenize('.')[0]
 
 	if (params.bam || params.singleEnd || params.longReads){
 	"""
 	bwa mem ${host_genome} ${reads} -t 4 > $samfile
 	samtools view -Sb $samfile > $bamfile
-	samtools view -b -f4 $bamfile > $unmapped_bam
+	samtools view -b -f4 $bamfile > $unmapped_bam 
 	samtools sort -n $unmapped_bam -o $bam_sorted
-	bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
+	bedtools bamtofastq -i $bam_sorted -fq "${name}_unmapped.fastq"
 	"""
 	}	
 	else {
@@ -430,10 +430,10 @@ process bwa {
 	bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2.removed.fastq"
 	"""
 	}
-} 
+}} 
 
-
-/*process bowtie2 {
+/*if (!params.longReads) {
+process bowtie2 {
 
   tag "$name"
   publishDir "${params.outdir}/bowtie2", mode: 'copy'
@@ -443,15 +443,15 @@ set val(name), file(reads) from trimmed_reads_bowtie2
 file(index) from bowtie2_input.collect()
 
 output:
-set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
+set val(name), file("*_unmapped.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
 
 script:
-samfile = name+".sam"
-bamfile = name+"_mapped_and_unmapped.bam"	
-unmapped_bam = name+ "_only_unmapped.bam"
-mapped_bam = name+"_mapped.bam"
-bam_sorted = name+"_sorted.bam"
-bam_mapped_sorted = name+"_mapped_sorted.bam"
+samfile = name + ".sam"
+bamfile = name + "_mapped_and_unmapped.bam"	
+unmapped_bam = name + "_only_unmapped.bam"
+mapped_bam = name + "_mapped.bam"
+bam_sorted = name + "_sorted.bam"
+bam_mapped_sorted = name + "_mapped_sorted.bam"
 
 index_name = index.toString().tokenize(' ')[0].tokenize('.')[0]	
 
@@ -461,7 +461,7 @@ bowtie2 -x $index_name --local -U $reads > $samfile
 samtools view -Sb $samfile > $bamfile
 samtools view -b -f4 $bamfile > $unmapped_bam
 samtools sort -n $unmapped_bam -o $bam_sorted
-bedtools bamtofastq -i $bam_sorted -fq "${name}.removed.fastq"
+bedtools bamtofastq -i $bam_sorted -fq "${name}_unmapped.fastq"
 """
 }else {
 """
@@ -473,8 +473,9 @@ bedtools bamtofastq -i $bam_sorted -fq "${name}_1.removed.fastq" -fq2 "${name}_2
 """
 }
 
-}*/
+}}*/
 
+if (params.longReads) {
 process minimap2 {
 	
         cpus 4
@@ -489,22 +490,22 @@ process minimap2 {
 
 	output:
 	file "*.bam*"
-        set val(name), file("*.removed.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju, ch_bowtie2_centrifuge)
+        set val(name), file("${name}_unmapped.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju, ch_bowtie2_centrifuge)
 
 	script:
-        samfile = name+".sam"
-        bamfile = name+"_mapped_and_unmapped.bam"
-        unmapped_bam = name+ "_only_unmapped.bam"
-        unmapped_sorted_bam = name+"unmapped_sorted.bam"
+        samfile = name + ".sam"
+        bamfile = name + ".bam"
+        unmapped_bam = name + "_unmapped.bam"
+        unmapped_sorted_bam = name + "_unmapped_sorted.bam"
 
         """
-        minimap2 -ax map-ont -t $task.cpus -a $host_genome $reads > $samfile
+        minimap2 -ax map-ont -t $task.cpus -a $host_genome $params.minimap2Param $reads > $samfile
         samtools view -bh $samfile > $bamfile
         samtools view -bh -f4 $bamfile > $unmapped_bam
         samtools sort -n $unmapped_bam -o $unmapped_sorted_bam
-        bedtools bamtofastq -i $unmapped_sorted_bam -fq "${name}.removed.fastq" 
+        bedtools bamtofastq -i $unmapped_sorted_bam -fq "${name}_unmapped.fastq" 
         """
-}
+}}
 
 /*
  * TAXONOMIC CLASSIFICATION
@@ -514,6 +515,7 @@ process minimap2 {
 process kraken2 {
 
 	tag "$name"
+        memory '80 GB'
 	publishDir "${params.outdir}/kraken2", mode: 'copy'
 
 
@@ -543,12 +545,14 @@ process kraken2 {
 process kaiju {
 
 	tag "$name"
+        memory '130 GB'
 
 	publishDir "${params.outdir}/kaiju", mode: 'copy'
-
+        database = Channel.fromPath("${params.kaijuDB}/*.fmi") 
 
 	input:
 	set val(name), file(reads) from ch_bowtie2_kaiju
+        path fmi from database 
 
 	output:
 	set val("kaiju"), val(name), file("*.kaiju.out") into kaiju_out
@@ -564,26 +568,25 @@ process kaiju {
 
 	if (params.pairedEnd){
 	"""
-	kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -j ${reads[1]} -o $out
+	kaiju -t ${params.kaijuDB}/nodes.dmp -f $fmi -i ${reads[0]} -j ${reads[1]} -o $out
 	kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju    
 	kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -o $summary $out
 	kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
 	"""
 	} else {
 	"""
-	kaiju -t ${params.kaijuDB}/nodes.dmp -f ${params.kaijuDB}/kaiju_db_viruses.fmi -i ${reads[0]} -o $out
+	kaiju -t ${params.kaijuDB}/nodes.dmp -f $fmi -i ${reads[0]} -o $out
 	kaiju2krona -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $krona_kaiju
 	kaiju2table -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -r species -o $summary $out
 	kaiju-addTaxonNames -t ${params.kaijuDB}/nodes.dmp -n ${params.kaijuDB}/names.dmp -i $out -o $taxon
 	"""
 	}
-
-
 } 
 
 process centrifuge {
 
 	tag "$name"
+        memory '80 GB'
 	cpus 4
 
 	publishDir "${params.outdir}/centrifuge", mode: 'copy'
@@ -603,16 +606,16 @@ process centrifuge {
 
 	if (params.bam || params.singleEnd || params.longReads) {
 	"""
-	centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file $report -S $results -U ${reads}
-	centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v $results > $kreport
+	centrifuge -x ${params.centrifugeDB} -p ${task.cpus} --report-file $report -S $results -U ${reads}
+	centrifuge-kreport -x  ${params.centrifugeDB} $results > $kreport
 	#cat results.txt | cut -f 1,3 > results.krona
 	"""
 	}	
 
 	else {
 	"""
-	centrifuge -x ${params.centrifugeDB}/p+h+v -p ${task.cpus} --report-file $report -S $results -1 ${reads[0]} -2 ${reads[1]}
-	centrifuge-kreport -x  ${params.centrifugeDB}/p+h+v $results > $kreport
+	centrifuge -x ${params.centrifugeDB} -p ${task.cpus} --report-file $report -S $results -1 ${reads[0]} -2 ${reads[1]}
+	centrifuge-kreport -x  ${params.centrifugeDB} $results > $kreport
 	#cat results.txt | cut -f 1,3 > results.krona
 	"""
 	}
@@ -698,12 +701,12 @@ if (!params.bam) {
 	set val(tool), val(name), file(report) from ch_parser
 
 	output:
-	set val(tool), val(name), file("*_results.txt") 
-	file("*filtered_taxonomic_hits.tsv")		
+	set val(tool), val(name), file("*filtered_taxonomic_hits.tsv") into ch_accessions 
+	file("*.tsv")
 
 	script:
 	"""
-	extractReferences.py ${tool} 100 ${report} > ${tool}_${name}_results.txt 
+	extractReferences.py ${name} ${tool} 100 ${report} 
 	"""
 
 	}	
@@ -715,18 +718,18 @@ if (params.bam) {
 
 	publishDir "${params.outdir}/filtering", mode: 'copy'
 
-	tag "${tool}"
+	tag "${name}_${tool}"
 
 	input:
 	set val(tool),val(control),file(report_control),val(sample),file(report_sample) from ch_sample_control
 
 	output:
-	set val(tool),val(sample),file("*_results.txt") 
-	file("*filtered_taxonomic_hits.tsv")
+        set val(tool), val(name), file("*filtered_taxonomic_hits.tsv") into ch_accessions
+        file("*.tsv")
 
 	script:
 	"""
-	extractReferences.py ${tool} 200,50,0.05,20 ${report_sample} ${report_control} > ${tool}_${sample}_results.txt
+	extractReferences.py ${name} ${tool} 200,50,0.05,20 ${report_sample} ${report_control}
 	"""
 	}
 } 
