@@ -10,12 +10,13 @@ import pandas as pd
 
 def main():
     # Input
-    classifier = sys.argv[1]
-    params = sys.argv[2]
-    hits_report = sys.argv[3]
+    sample = sys.argv[1]
+    classifier = sys.argv[2]
+    params = sys.argv[3]
+    hits_report = sys.argv[4]
     ntc = None
-    if len(sys.argv) > 4:
-        ntc = sys.argv[4]
+    if len(sys.argv) > 5:
+        ntc = sys.argv[5]
     reference_summary_refseq = "ftp://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/assembly_summary_refseq.txt"
     reference_summary_genbank = "ftp://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt"
     #reference_summary_refseq = "rsync://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/assembly_summary_refseq.txt"
@@ -50,8 +51,9 @@ def main():
     print("min_reads_ratio", min_reads_ratio)
 
     # Output
-    summary_filtered = "{}_{}_filtered_taxonomic_hits.tsv".format(classifier,hits_report)
-    summary_skipped = "{}_{}_skipped_taxonomic_hits.tsv".format(classifier,hits_report)
+    summary_filtered = "{}_{}_filtered_taxonomic_hits.tsv".format(classifier,sample)
+    summary_skipped = "{}_{}_skipped_taxonomic_hits.tsv".format(classifier,sample)
+    summary_failed = "{}_{}_failed_identification_taxonomic_hits.tsv".format(classifier,sample)
 
     # Parse hits
     all_hits = get_all_hits(hits_report, classifier)
@@ -79,11 +81,7 @@ def main():
         else:
             if reads > min_reads:
                 add_taxid(all_hits, taxid, filtered_hits, skipped_hits)
-    sorted_hits = sorted(list(filtered_hits.items()), key=lambda k: k[1][0], reverse=True)
-    print("Found {} species in the sample".format(len(filtered_hits)))
-    for hit in filtered_hits:
-      print (hit, filtered_hits[hit])
-
+    
     # Download refseq assembly summary file from ncbi
     print("Downloading NCBI refseq reference summary file")
     download_ftp(reference_summary_refseq)
@@ -100,6 +98,16 @@ def main():
         missing_acc = parse_accession(reference_summary_genbank, missing_acc_refseq, taxid_accesion_map)
         if len(missing_acc) > 0:
             print("Failed to identify accession number of reference for taxons: {}".format(", ".join(missing_acc)))
+            with open(summary_failed, "w") as f:
+                for taxid in missing_acc:
+                     filtered_hits.pop(taxid)
+                     f.write(taxid + "\n")
+
+    # Sort hits
+    sorted_hits = sorted(list(filtered_hits.items()), key=lambda k: k[1][0], reverse=True)
+    print("Found {} species in the sample".format(len(filtered_hits)))
+    for hit in filtered_hits:
+        print (hit, filtered_hits[hit])
 
     # Create summary files
     with open(summary_filtered, "w") as out:
@@ -120,7 +128,7 @@ def get_all_hits(results, classifier):
             hit = hit.strip().split("\t")
             if classifier == "kaiju":
                 all_hits[hit[3]] = [hit[2], hit[4]]
-            elif classifier in ["kraken2", "centrifuge"]:
+            elif classifier == "kraken2":
                 reads = hit[1]
                 level = hit[3]
                 name = hit[5].strip().rstrip()
@@ -128,8 +136,21 @@ def get_all_hits(results, classifier):
                     taxid = hit[4]
                     all_hits[taxid] = [reads, name]
                 elif level.startswith("S") or level == "-":
-                    if name not in ["root","cellular organisms","Opisthokonta","Eumetazoa","Bilateria","Deuterostomia","Craniata","Vertebrata","Gnathostomata","Teleostomi","Euteleostomi","Sarcopterygii"," Eutheria","Dipnotetrapodomorpha","Tetrapoda","Amniota","Theria","Eutheria","Boreoeutheria","Euarchontoglires","Haplorrhini","Simiiformes","Catarrhini","Hominoidea","Homininae","Pseudomonas fluorescens group"]:
-                         all_hits[taxid].append([reads, name, hit[4]])
+                    try:
+                        all_hits[taxid].append([reads, name, hit[4]])
+                    except Exception as e:
+                        print(e)
+            elif classifier == "centrifuge":
+                reads = hit[1]
+                level = hit[3]
+                name = hit[5].strip().rstrip()
+                if level == "S":
+                    taxid = hit[4]
+                    all_hits[taxid] = [reads, name]
+                    try:
+                        all_hits[taxid].append([reads, name, hit[4]])
+                    except Exception as e:
+                        print(e)
             else:
                 print("No classifier specified. Supported classifiers are kraken2, centrifuge and kaiju.")
                 sys.exit(1)

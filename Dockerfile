@@ -1,6 +1,6 @@
 FROM continuumio/miniconda3:4.8.2
 
-RUN apt-get update --fix-missing && apt install -yq make gcc g++ gfortran git
+RUN apt-get update --fix-missing && apt install -yq make gcc g++ gfortran git procps
 
 COPY environment.yml /
 
