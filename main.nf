@@ -387,7 +387,7 @@ process bwa {
     file host_genome from file(params.hostReference)
 
     output:
-    set val(name), file("*_unmapped.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
+    set val(name), file("*_unmapped.fastq") into ch_bwa_out
 
     script:
     samfile = name + ".sam"
@@ -433,7 +433,7 @@ process bowtie2 {
     file(index) from bowtie2_input.collect()
 
     output:
-    set val(name), file("*_unmapped.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju,ch_bowtie2_centrifuge)
+    set val(name), file("*_unmapped.fastq") into ch_bowtie2_out
 
     script:
     samfile = name + ".sam"
@@ -464,6 +464,10 @@ process bowtie2 {
 
 }}
 
+ch_bowtie2_out
+    .mix(ch_bwa_out)
+    .into {ch_kraken; ch_kaiju; ch_centrifuge}
+
 if (params.longReads) {
 process minimap2 {
 
@@ -479,7 +483,7 @@ process minimap2 {
 
     output:
     file "*.bam*"
-    set val(name), file("${name}_unmapped.fastq") into (ch_bowtie2_kraken, ch_bowtie2_kaiju, ch_bowtie2_centrifuge)
+    set val(name), file("${name}_unmapped.fastq") into (ch_kraken, ch_kaiju, ch_centrifuge)
 
     script:
     samfile = name + ".sam"
@@ -497,10 +501,12 @@ process minimap2 {
 
 }}
 
+
 /*
  * TAXONOMIC CLASSIFICATION
  *
  */
+
 
 process kraken2 {
 
@@ -509,7 +515,7 @@ process kraken2 {
     publishDir "${params.outdir}/kraken2", mode: 'copy'
 
     input:
-    set val(name), file(reads) from ch_bowtie2_kraken
+    set val(name), file(reads) from ch_kraken
 
     output:
     set val("kraken2"), val(name), file("*.kraken.out.txt") into kraken2_krona
@@ -539,7 +545,7 @@ process kaiju {
     database = Channel.fromPath("${params.kaijuDB}/*.fmi")
 
     input:
-    set val(name), file(reads) from ch_bowtie2_kaiju
+    set val(name), file(reads) from ch_kaiju
     path fmi from database
 
     output:
@@ -574,13 +580,13 @@ process kaiju {
 process centrifuge {
 
     tag "$name"
-        memory '80 GB'
+    memory '80 GB'
     cpus 4
 
     publishDir "${params.outdir}/centrifuge", mode: 'copy'
 
     input:
-    set val(name), file(reads) from ch_bowtie2_centrifuge
+    set val(name), file(reads) from ch_centrifuge
 
     output:
     set val("centrifuge"), val(name), file("*.kreport.txt") into centrifuge_out
