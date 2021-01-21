@@ -309,7 +309,7 @@ if (!params.longReads) {
 process index_host_bowtie2 {
 
     when:
-    params.mapper == "bowtie2"
+    params.mapper == "bowtie2" && params.build
 
     input:
     file host_genome from file(params.hostReference)
@@ -324,19 +324,11 @@ process index_host_bowtie2 {
 
 }}
 
-/*
-// Get prebuilt host indices
-if (!params.build) {
-    Channel
-    .fromPath("${params.hostIndex}/*.bt2")
-    .set {bowtie2_input}
-}*/
-
 if (!params.longReads) {
 process index_host_bwa {
 
     when:
-    params.mapper == "bwa"
+    params.mapper == "bwa" && params.build
 
     input:
     file host_genome from file(params.hostReference)
@@ -350,6 +342,18 @@ process index_host_bwa {
     """
 
 }}
+
+// Get prebuilt host indices
+if (params.mapper == "bowtie2" && !params.build) {
+    Channel
+    .fromPath("${params.bowtie2Index}/*.bt2")
+    .set {bowtie2_input}
+}
+if (params.mapper == "bwa" && !params.build) {
+    Channel
+    .fromPath("${params.bwaIndex}/*")
+    .set {bwa_input}
+}
 
 process krakenBuild {
     
